@@ -36,8 +36,8 @@ constexpr int G_BIT = 3;
 constexpr int B_BIT = 4;
 constexpr int L_BIT = 5;
 
+// LUT to translate ABCDEFGH to AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHH
 uint32_t pattern_mask[256];
-
 void compute_pattern_mask()
 {
     for (int p=0; p<256; p++) {
@@ -49,12 +49,13 @@ void compute_pattern_mask()
     }
 }
 
-//uint8_t line_buffer_active[481][322] = {};
+// Video memory
 uint8_t *framebuffer = 0;
+
+// Pointers to individual scanlines
 uint8_t *line_pointers[481];
 
-//uint8_t text_buffer[30][80];
-
+// Allocate framebuffer and load scanline pointers
 void init_line_pointers()
 {
     uint32_t bytes = 324 * 481;
@@ -65,6 +66,7 @@ void init_line_pointers()
     }
 }
 
+// Scroll a region by rearranging line pointers
 void scroll(int start, int end, int by, uint8_t co)
 {
     co *= 0x11;
@@ -78,6 +80,7 @@ void scroll(int start, int end, int by, uint8_t co)
     }
 }
 
+// Draw a single character to the framebuffer
 void draw_char(uint8_t ch, uint8_t co, int x, int y)
 {
     y <<= 4;
@@ -92,101 +95,97 @@ void draw_char(uint8_t ch, uint8_t co, int x, int y)
         uint32_t v = (fg & m) | (bg & ~m);
         *row = v;
     }
-    // for (int j=0; j<16; j++) {
-    //     uint32_t *row = (uint32_t*)line_pointers[y+j];
-    //     printf("y=%d, j=%d, row=%p\n", y, j, row);
-    //     *row = 0xAAAAAAAA;
-    //     printf("Done\n");
-    // }
 }
 
-#if 0
-void clear_line(uint8_t co, int y)
+// Draw a string to the framebuffer
+void vga_draw_string(int x, int y, uint8_t co, uint8_t *str, int len)
 {
-    co *= 0x11;
-    for (int j=0; j<16; j++) {
-        memset(line_pointers[y+j], co, 320);
-    }
-}
-
-uint cursor_x=0, cursor_y=0;
-bool cursor_on = false;
-
-void show_cursor(bool show)
-{
-    if (show == cursor_on) return;
-    cursor_on = show;
+    y <<= 4; // Text rows are 16 scanlines
     
-    int y = cursor_y << 4;
-    for (int j=0; j<16; j++) {
-        uint32_t *row = (uint32_t*)line_pointers[y+j];
-        row += cursor_x;
-        *row ^= 0xffffffff;
-    }
-}
-
-void write_char(uint8_t ch, uint8_t co)
-{
-    show_cursor(false);
-    switch (ch) {
-    case 13:
-    case 10:
-        cursor_x = 0;
-        cursor_y++;
-        break;
-    default:
-        draw_char(ch, co, cursor_x, cursor_y);
-        cursor_x++;
-        break;
-    }
-    if (cursor_x == 80) {
-        cursor_x = 0;
-        cursor_y++;
-    }
-    if (cursor_y == 30) {
-        scroll(0, 480, 16, 0);
-        cursor_y = 29;
-    }
-    show_cursor(true);
-}
-#endif
-
-void vga_draw_string(int x, int y, uint8_t colors, uint8_t *str, int len)
-{
-    //printf("Drawing string from %d,%d, len %d\n", x, y, len);
+    // Extract foreground and background colors and replicate them across 32-bit word
+    uint32_t fg = (co & 15) * 0x11111111;
+    uint32_t bg = (co >> 4) * 0x11111111;
+    
+    // Find each string character in the display font
+    uint8_t *pc[len];
     for (int i=0; i<len; i++) {
-        draw_char(str[i], colors, x+i, y);
+        pc[i] = &customfont[(uint)str[i]<<4];
+    }
+    
+    for (int j=0; j<16; j++) {
+        // Look up the scanline pointer for row j of the text line,
+        // convert to pointer to 32-bit word, and add x.
+        // Characters are 8 pixels wide, which is one 32-bit word
+        // at 4bpp.
+        uint32_t *rp = (uint32_t*)line_pointers[y+j] + x;
+        for (int i=0; i<len; i++) {
+            uint8_t p = *pc[i]++;               // 8-bit pattern for this row of character 1
+            uint32_t m = pattern_mask[p];       // Convert to 4bpp mask
+            uint32_t v = (fg & m) | (bg & ~m);  // Mix fg and bg accoring to mask
+            *rp++ = v;                          // Store word to framebuffer
+        }
     }
 }
 
+// 32-bit memset
+inline void set_words(uint32_t *p, uint32_t v, int c)
+{
+    while (c) {
+        c--;
+        *p++ = v;
+    }
+}
+
+// Copy pointers in forward order
+inline void copy_ptrs(uint8_t **d, uint8_t **s, int c)
+{
+    while (c) {
+        c--;
+        *d++ = *s++;
+    }
+}
+
+// Copy pointers in reverse order
+inline void copy_ptrs_r(uint8_t **d, uint8_t **s, int c)
+{
+    d += c;
+    s += c;
+    while (c) {
+        c--;
+        *--d = *--s;
+    }
+}
+
+// Clear a box of characters
 void vga_clear_area(int x, int y, uint8_t color, int w)
 {
-    //printf("Clearing area from %d,%d, len %d, color=%d\n", x, y, w, color);
     y <<= 4;
-    uint8_t co = color * 0x11;
+    uint32_t co = color * 0x11111111;
     for (int j=0; j<16; j++) {
         uint32_t *row = (uint32_t*)line_pointers[y+j];
-        memset(row+x, co, w<<2);
+        //memset(row+x, co, w<<2);
+        set_words(row+x, co, w);
     }
 }
 
+// Draw a 1-pixel tall horizontal line
 void vga_draw_line(int x, int y, uint8_t color, int w)
 {
-    //printf("Drawing line from %d,%d, width %d\n", x, y, w);
-    uint8_t co = color * 0x11;
+    uint32_t co = color * 0x11111111;
     uint32_t *row = (uint32_t*)line_pointers[(y<<4) + 15];
-    memset(row + x, co, w<<2);
+    //memset(row + x, co, w<<2);
+    set_words(row+x, co, w);
 }
 
 void vga_copy_area(int sx, int sy, int dx, int dy, int w, int h)
 {
-    //printf("Copy area (%d,%d) to (%d,%d) %d x %d\n", sx, sy, dx, dy, w, h);
     if (sx == dx && sy == dy) return;
     
     dy <<= 4;
     sy <<= 4;
     h <<= 4;
     if (w == 80 && sx == 0 && dx == 0) {
+        // Can scroll by renumbering scanlines
         if (dy >= sy+h || dy+h <= sy) {
             // Nonoverlapping regions, swap row pointers
             for (int y=0; y<h; y++) {
@@ -194,26 +193,36 @@ void vga_copy_area(int sx, int sy, int dx, int dy, int w, int h)
             }
         } else if (dy > sy) {
             // Scrolling down
-            int rep = dy - sy;
-            h += rep;
-            for (int j=0; j<rep; j++) {
-                uint8_t *tmp = line_pointers[sy+h-1];
-                for (int i=h-1; i>0; i--) {
-                    line_pointers[sy+i] = line_pointers[sy+i-1];
-                }
-                line_pointers[sy] = tmp;
-            }
+            // int rep = dy - sy;
+            // h += rep;
+            // for (int j=0; j<rep; j++) {
+            //     uint8_t *tmp = line_pointers[sy+h-1];
+            //     for (int i=h-1; i>0; i--) {
+            //         line_pointers[sy+i] = line_pointers[sy+i-1];
+            //     }
+            //     line_pointers[sy] = tmp;
+            // }
+            int dif = dy - sy;
+            uint8_t *tmp[dif];
+            copy_ptrs(tmp, &line_pointers[sy+h], dif);
+            copy_ptrs_r(&line_pointers[dy], &line_pointers[sy], h);
+            copy_ptrs(&line_pointers[sy], tmp, dif);
         } else {
             // Scrolling up
-            int rep = sy - dy;
-            h += rep;
-            for (int j=0; j<rep; j++) {
-                uint8_t *tmp = line_pointers[dy];
-                for (int i=1; i<h; i++) {
-                    line_pointers[dy+i-1] = line_pointers[dy+i];
-                }
-                line_pointers[dy+h-1] = tmp;
-            }
+            // int rep = sy - dy;
+            // h += rep;
+            // for (int j=0; j<rep; j++) {
+            //     uint8_t *tmp = line_pointers[dy];
+            //     for (int i=1; i<h; i++) {
+            //         line_pointers[dy+i-1] = line_pointers[dy+i];
+            //     }
+            //     line_pointers[dy+h-1] = tmp;
+            // }
+            int dif = sy - dy;
+            uint8_t *tmp[dif];
+            copy_ptrs(tmp, &line_pointers[dy], dif);
+            copy_ptrs(&line_pointers[dy], &line_pointers[sy], h);
+            copy_ptrs(&line_pointers[dy+h], tmp, dif);
         }
     } else {
         sx <<= 2;
@@ -296,23 +305,22 @@ void core1_entry()
     VGATerm term;
     
     bool pending = true;
+    uint64_t timeout = time_us_64() + 16666;
     for (;;) {
-        uint64_t timeout = time_us_64() + 100;
         while (buf_head == buf_tail && time_us_64() < timeout);
-        if (buf_head == buf_tail) {
-            if (pending) term.Update();
-            pending = false;
-        } else {
+        
+        int tc = 0;
+        if (buf_head != buf_tail) {
             int tail = buf_tail;
             int head = buf_head;
             if (tail > head) {
                 int count = tail - head;
+                tc = count;
                 //printf("%d\n", count);
                 term.ProcessInput(count, text_buffer + head);
-                if (count < 2048) term.Update();
+                //if (count < 2048) term.Update();
                 buf_head = tail;
             } else {
-                int tc;
                 int count = 4096 - head;
                 tc = count;
                 //printf("%d\n", count);
@@ -320,10 +328,15 @@ void core1_entry()
                 count = tail;
                 tc += count;
                 term.ProcessInput(count, text_buffer);
-                if (tc < 2048) term.Update();
+                //if (tc < 2048) term.Update();
                 buf_head = tail;
             }
             pending = true;
+        }
+        if (time_us_64() >= timeout && tc < 2048) {
+            if (pending) term.Update();
+            pending = false;
+            timeout = time_us_64() + 16666;
         }
     }
 }
