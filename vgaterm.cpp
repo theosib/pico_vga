@@ -15,14 +15,8 @@ VGATerm::~VGATerm() {}
 void VGATerm::DrawText(int fg_color, int bg_color, int flags,
                 int x, int y, int len, unsigned char *string)
 {
-	int t;
-
-    // if (fg_color == 0 && (flags&BOLD)) {
-    //     fg_color = 7;
-    //     flags &= ~BOLD;
-    // }
 	if (flags & INVERSE) {
-		t = fg_color;
+		int t = fg_color;
 		fg_color = bg_color;
 		bg_color = t;
 	}
@@ -65,7 +59,7 @@ void VGATerm::Bell()
 
 void VGATerm::RequestSizeChange(int w, int h)
 {
-	if (w != Width() || h != Height()) {
-		ResizeTerminal(w, h);
-	}
+    // if (w != Width() || h != Height()) {
+    //     ResizeTerminal(w, h);
+    // }
 }

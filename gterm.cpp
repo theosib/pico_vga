@@ -28,36 +28,23 @@ void GTerm::ProcessInput(int len, unsigned char *data)
 
     data_len = len;
     input_data = data;
-#if 0
-    //std::string s((const char*)data,unsigned(len));
-    cerr<<"len=" << len << ",data:[";
-    for (i=0; i<len; i++) {
-        if (data[i]<32 || data[i]>126) {
-            cout << '\\' << ((int)(data[i]&0700)>>6) <<
-                ((int)(data[i]&070)>>3) << ((int)(data[i]&07));
-        } else {
-            cout << data[i];
-        }
-    }
-    cout <<"]"<<endl;
-#endif
 
     while (data_len) {
 	i = 0;
 	while (current_state[i].byte != -1 &&
 	    current_state[i].byte != *input_data) i++;
 
-	// action must be allowed to redirect state change
-	last_state = current_state+i;
-	current_state = last_state->next_state;
-	if (last_state->action)
-            (this->*(last_state->action))();
-	input_data++;
-	data_len--;
+    	// action must be allowed to redirect state change
+    	last_state = current_state+i;
+    	current_state = last_state->next_state;
+    	if (last_state->action)
+                (this->*(last_state->action))();
+    	input_data++;
+    	data_len--;
     }
 
     if (!(mode_flags & DEFERUPDATE) ||
-	(pending_scroll > scroll_bot-scroll_top)) update_changes();
+	    (pending_scroll > scroll_bot-scroll_top)) update_changes();
 }
 
 void GTerm::Reset()
