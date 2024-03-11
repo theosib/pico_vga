@@ -22,19 +22,20 @@ StateOption GTerm::normal_state[] = {
 StateOption GTerm::esc_state[] = {
 	{'[', &GTerm::clear_param       , bracket_state      },
 	//{']', &GTerm::clear_param       , nonstd_state       },
-        {'>', &GTerm::keypad_numeric    , normal_state       },
+    {'>', &GTerm::keypad_numeric    , normal_state       },
 	{'=', &GTerm::keypad_application, normal_state       },
-        {'7', &GTerm::save_cursor       , normal_state       },
+    {'7', &GTerm::save_cursor       , normal_state       },
 	{'8', &GTerm::restore_cursor    , normal_state       },
-        {'H', &GTerm::set_tab           , normal_state       },
-        {'D', &GTerm::index_down        , normal_state       },
+    {'H', &GTerm::set_tab           , normal_state       },
+    {'D', &GTerm::index_down        , normal_state       },
 	{'M', &GTerm::index_up          , normal_state       },
-        {'T', &GTerm::index_up          , normal_state       }, //FreeBSD cons25 ???
+    {'T', &GTerm::index_up          , normal_state       }, //FreeBSD cons25 ???
 	{'E', &GTerm::next_line         , normal_state       },
-        {'c', &GTerm::reset             , normal_state       },
+    {'c', &GTerm::reset             , normal_state       },
+    {'G', 0                         , gfx_state          },
 
 	{'(', 0                         , cset_shiftin_state },
-        {')', 0                         , cset_shiftout_state},
+    {')', 0                         , cset_shiftout_state},
 	{'#', 0                         , hash_state         },
 
     {0007  , &GTerm::bell        , esc_state},
@@ -46,7 +47,12 @@ StateOption GTerm::esc_state[] = {
     {0014  , &GTerm::lf          , esc_state},
     {0015  , &GTerm::cr          , esc_state},
 
-        {-1, 0                         , normal_state}
+    {-1, 0                         , normal_state}
+};
+
+StateOption GTerm::gfx_state[] = {
+    {0033  , 0                    ,  normal_state},
+    {-1    , &GTerm::gfx_input,     gfx_state}
 };
 
 StateOption GTerm::bracket_state[] = {

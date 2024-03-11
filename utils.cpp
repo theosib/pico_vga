@@ -51,7 +51,7 @@ void GTerm::update_changes()
         blank = !(mode_flags & TEXTONLY);
         start_x = dirty_startx[y];
         end_x = dirty_endx[y];
-        //printf("Line %d dirty from %d to %d\n", y, start_x, end_x);
+        // printf("Line %d dirty from %d to %d\n", y, start_x, end_x);
         c = color[yp+start_x];
         //TODO:optimize
         //use blank to fast clearing

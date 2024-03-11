@@ -8,6 +8,7 @@ extern void vga_draw_string(int x, int y, uint8_t colors, uint8_t *str, int len)
 extern void vga_draw_line(int x, int y, uint8_t color, int w);
 extern void vga_copy_area(int sx, int sy, int dx, int dy, int w, int h);
 extern void vga_clear_area(int x, int y, uint8_t color, int w);
+extern void vga_plot_pixel(int x, int y, uint8_t color);
 
 
 VGATerm::~VGATerm() {}
@@ -62,4 +63,10 @@ void VGATerm::RequestSizeChange(int w, int h)
     // if (w != Width() || h != Height()) {
     //     ResizeTerminal(w, h);
     // }
+}
+
+void VGATerm::PlotPixel(int x, int y, int c)
+{
+    if (x < 0 || y < 0 || x >= 640 || y >= 480) return;
+    vga_plot_pixel(x, y, c);
 }

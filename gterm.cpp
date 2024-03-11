@@ -28,12 +28,17 @@ void GTerm::ProcessInput(int len, unsigned char *data)
 
     data_len = len;
     input_data = data;
+    
+    // printf("Got input: ");
+    // for (int i=0; i<len; i++) printf("%d ", data[i]);
+    // printf("\n");
 
     while (data_len) {
-	i = 0;
-	while (current_state[i].byte != -1 &&
-	    current_state[i].byte != *input_data) i++;
+    	i = 0;
+    	while (current_state[i].byte != -1 &&
+    	    current_state[i].byte != *input_data) i++;
 
+        // printf("State %p -> %p (gfx=%p), action=%p, data_len=%d\n", current_state, current_state[i].next_state, gfx_state, current_state[i].action, data_len);
     	// action must be allowed to redirect state change
     	last_state = current_state+i;
     	current_state = last_state->next_state;
@@ -42,6 +47,8 @@ void GTerm::ProcessInput(int len, unsigned char *data)
     	input_data++;
     	data_len--;
     }
+    
+    // printf("Leaving ProcessInput\n");
 
     if (!(mode_flags & DEFERUPDATE) ||
 	    (pending_scroll > scroll_bot-scroll_top)) update_changes();

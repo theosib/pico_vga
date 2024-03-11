@@ -11,6 +11,49 @@
 
 using namespace std;
 
+void GTerm::gfx_input()
+{
+    //printf("gfx_input data_len=%d\n", data_len);
+    while (data_len>0) {
+        //printf("%d\n", *input_data);
+        switch (*input_data) {
+        case 27:
+            input_data--;
+            data_len++;
+            return;
+        case 13:
+            gfx_x = 0;
+            break;
+        case 10:
+            gfx_y++;
+            break;
+        case 11:
+            gfx_y--;
+            break;
+        case 12:
+            gfx_x = 0;
+            gfx_y = 0;
+            break;
+        case 32:
+            gfx_x++;
+            break;
+        case 8:
+            gfx_x--;
+            break;
+        default:
+            if (*input_data >= 64 && *input_data < 80 && gfx_x < 640 && gfx_y < 480) {
+                PlotPixel(gfx_x, gfx_y, *input_data - 64);
+                gfx_x++;
+            }
+            break;
+        }
+        input_data++;
+        data_len--;
+    }
+    input_data--;
+    data_len++;
+}
+
 // For efficiency, this grabs all printing characters from buffer, up to
 // the end of the line or end of buffer
 void GTerm::normal_input()
@@ -210,6 +253,8 @@ void GTerm::reset()
 	fg_color       = 7;
 	scroll_top     = 0;
 	scroll_bot     = height-1;
+    gfx_x = 0;
+    gfx_y = 0;
 
 	for (i=0; i<height; i++) {
 		// make it draw whole terminal to start

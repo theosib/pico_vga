@@ -41,6 +41,7 @@ private:
     	bool inverse_mode;
 	
 	// terminal state
+    int gfx_x, gfx_y;
 	int cursor_x, cursor_y;
 	int save_x, save_y, save_attrib;
 	int fg_color, bg_color;
@@ -58,6 +59,7 @@ private:
 	static StateOption nonstd_state[];
 	static StateOption vt52_normal_state[], vt52_esc_state[];
 	static StateOption vt52_cursory_state[], vt52_cursorx_state[];
+    static StateOption gfx_state[];
 
 	// utility functions
 	void update_changes();
@@ -137,6 +139,9 @@ private:
 	void vt52_cursory();
 	void vt52_cursorx();
 	void vt52_ident();
+    
+    // gfx extension
+    void gfx_input();
 
 public:
 	GTerm(int w, int h);
@@ -169,6 +174,7 @@ public:
 	virtual void ModeChange(int state) { }
 	virtual void Bell() { }
 	virtual void RequestSizeChange(int w, int h) { }
+    virtual void PlotPixel(int x, int y, int c) { }
 };
 
 #endif

@@ -7,6 +7,8 @@
 #include "vgaterm.hpp"
 #include "hardware/clocks.h"
 #include <algorithm>
+#include "bsp/board.h"
+#include "tusb.h"
 
 // Video timing numbers for 640x480@60
 constexpr int HACTIVE = 640;
@@ -153,6 +155,18 @@ inline void copy_ptrs_r(uint8_t **d, uint8_t **s, int c)
     while (c) {
         c--;
         *--d = *--s;
+    }
+}
+
+void vga_plot_pixel(int x, int y, uint8_t color)
+{
+    uint8_t *row = line_pointers[y];
+    row += x>>1;
+    color &= 15;
+    if (x&1) {
+        *row = (*row & 0x0f) | (color << 4);
+    } else {
+        *row = (*row & 0xf0) | (color);
     }
 }
 
@@ -359,6 +373,8 @@ void draw_test_pattern()
 int main()
 {
     stdio_init_all();
+    board_init();
+    tuh_init(BOARD_TUH_RHPORT);
     //stdio_set_translate_crlf(&stdio_uart, false);
     
     compute_pattern_mask();
@@ -367,16 +383,15 @@ int main()
     printf("Starting VGA\n");
     multicore_launch_core1(core1_entry);
     
-    sleep_ms(1000);
+    // sleep_ms(1000);
     draw_test_pattern();
-        
-    uint8_t char_buf[1000];
-    int num_char = 0;
-    
+            
     while (1) {
         // Currently it's the console we're using for input, so just fetch
         // bytes and send them to the other CPU through the ring buffer
-        add_char(getchar());
+        int ch = getchar_timeout_us(1);
+        if (ch != PICO_ERROR_TIMEOUT) add_char(ch);
+        tuh_task();
         
         // Might need this later
         // int ch = getchar_timeout_us(100);
@@ -384,3 +399,15 @@ int main()
     }
 }
 
+
+void tuh_mount_cb(uint8_t dev_addr)
+{
+  // application set-up
+  printf("A device with address %d is mounted\r\n", dev_addr);
+}
+
+void tuh_umount_cb(uint8_t dev_addr)
+{
+  // application tear-down
+  printf("A device with address %d is unmounted \r\n", dev_addr);
+}

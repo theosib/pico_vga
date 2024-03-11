@@ -47,7 +47,7 @@ static inline void vga_data_init(PIO pio, uint sm, uint prog_offset, uint rgb_ba
     pio_sm_config c = vga_data_program_get_default_config(prog_offset);
     sm_config_set_out_pins(&c, rgb_base, 4);        // Four GPIOs for OUT instructin
     sm_config_set_set_pins(&c, hsync_pin, 1);       // One GPIO for SET instruction
-    sm_config_set_out_shift(&c, true, true, 8);     // Auto-pull for OUT instruction
+    sm_config_set_out_shift(&c, true, true, 8);     // Auto-pull for OUT instruction, shift right
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);  // Don't need RX fifo so extend TX fifo
     
     // Configure PIO clock rate

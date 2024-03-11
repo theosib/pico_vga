@@ -22,6 +22,7 @@ public:
 	void SendBack(const char *data);
 	void Bell();
 	void RequestSizeChange(int w, int h);
+    void PlotPixel(int x, int y, int c);
 };
 
 
