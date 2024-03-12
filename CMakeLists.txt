@@ -10,7 +10,7 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 pico_sdk_init()
 
-add_executable(vga main.cpp gterm.cpp states.cpp vt52_states.cpp actions.cpp utils.cpp vgaterm.cpp hid_app.c)
+add_executable(vga main.cpp gterm.cpp states.cpp vt52_states.cpp actions.cpp utils.cpp vgaterm.cpp hid_app.cpp mouse.cpp video.cpp console.cpp graphics.cpp)
 
 target_include_directories(vga PUBLIC
         ${CMAKE_CURRENT_LIST_DIR})

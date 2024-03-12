@@ -25,6 +25,11 @@
 
 #include "bsp/board.h"
 #include "tusb.h"
+#include "console.hpp"
+#include "mouse.hpp"
+
+extern VGAConsole *console;
+extern VGAMouse *mouse;
 
 //--------------------------------------------------------------------+
 // MACRO TYPEDEF CONSTANT ENUM DECLARATION
@@ -156,8 +161,10 @@ static void process_kbd_report(hid_keyboard_report_t const *report)
       {
         // not existed in previous report means the current key is pressed
         bool const is_shift = report->modifier & (KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT);
-        uint8_t ch = keycode2ascii[report->keycode[i]][is_shift ? 1 : 0];
+        bool const is_ctrl = report->modifier & (KEYBOARD_MODIFIER_LEFTCTRL | KEYBOARD_MODIFIER_RIGHTCTRL);
+        uint8_t ch = is_ctrl ? (keycode2ascii[report->keycode[i]][0] - 'a' + 1) : keycode2ascii[report->keycode[i]][is_shift ? 1 : 0];
         putchar(ch);
+        console->add_char(ch);
         if ( ch == '\r' ) putchar('\n'); // added new line for enter key
 
         fflush(stdout); // flush right away, else nanolib will wait for newline
@@ -206,6 +213,8 @@ void cursor_movement(int8_t x, int8_t y, int8_t wheel)
   printf("\r\n");
 #else
   printf("(%d %d %d)\r\n", x, y, wheel);
+  mouse->move_mouse(x, y);
+  
 #endif
 }
 
