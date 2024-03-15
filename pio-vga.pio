@@ -44,30 +44,30 @@ hactive_loop:
 // Configure PIO to send video data
 static inline void vga_data_init(PIO pio, uint sm, uint prog_offset, uint rgb_base, uint hsync_pin, float freq)
 {
-    printf("Config pio %d, sm %d, offset %d, rgp_pin %d, hsync_pin %d, freq %f\n", pio_get_index(pio), sm, prog_offset, rgb_base, hsync_pin, freq);
+    //printf("Config pio %d, sm %d, offset %d, rgp_pin %d, hsync_pin %d, freq %f\n", pio_get_index(pio), sm, prog_offset, rgb_base, hsync_pin, freq);
     pio_sm_config c = vga_data_program_get_default_config(prog_offset);
     sm_config_set_out_pins(&c, rgb_base, 4);        // Four GPIOs for OUT instructin
     sm_config_set_set_pins(&c, hsync_pin, 1);       // One GPIO for SET instruction
     sm_config_set_out_shift(&c, true, true, 8);     // Auto-pull for OUT instruction, shift right
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);  // Don't need RX fifo so extend TX fifo
     
-    printf("Clock\n");
+    //printf("Clock\n");
     // Configure PIO clock rate
     float div = clock_get_hz(clk_sys) / freq;    
     sm_config_set_clkdiv(&c, div);
     
-    printf("Pins\n");
+    //printf("Pins\n");
     // Configure pin directions and connect them to PIO
     pio_sm_set_consecutive_pindirs(pio, sm, rgb_base, 4, true); 
     pio_sm_set_consecutive_pindirs(pio, sm, hsync_pin, 1, true);
     for (int i=0; i<4; i++) pio_gpio_init(pio, rgb_base + i);
     pio_gpio_init(pio, hsync_pin);
     
-    printf("Init SM\n");
+    //printf("Init SM\n");
     // Initialize the state machine
     pio_sm_init(pio, sm, prog_offset, &c);
     
-    printf("Set Y\n");
+    //printf("Set Y\n");
     // Push count of active video pixels into TX fifo then force SM to execute "PULL" and "OUT Y, 32" instructions
     // to load horizontal active count into Y scratch register. The PIO code is configured to send 642 pixels because
     // we need to ensure that black pixels are sent turing the horizontal blanking period. This is then subtracted from
@@ -76,10 +76,10 @@ static inline void vga_data_init(PIO pio, uint sm, uint prog_offset, uint rgb_ba
     pio_sm_exec(pio, sm, pio_encode_pull(false, false));
     pio_sm_exec(pio, sm, pio_encode_out(pio_y, 32));
     
-    printf("Start\n");
+    //printf("Start\n");
     // Start the state machine running
     pio_sm_set_enabled(pio, sm, true);
-    printf("Done setting up SM\n");
+    //printf("Done setting up SM\n");
 }
 
 // Configure the horizontal blank interrupt service routine

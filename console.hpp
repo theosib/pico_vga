@@ -7,7 +7,7 @@
 
 typedef void (*task_f)();
 
-struct VGAConsole {
+struct VGAConsole : public KeyReceiver {
     VGATerm *term;
     VGAMouse *mouse;
     
@@ -33,6 +33,10 @@ struct VGAConsole {
     }
     
     void console_loop();
+    
+    virtual void report_key_pressed(int ch) {
+        add_char(ch);
+    }
 };
 
 

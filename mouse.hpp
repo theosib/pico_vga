@@ -2,8 +2,9 @@
 #define INCLUDED_MOUSE_HPP
 
 #include "graphics.hpp"
+#include "hid_app.hpp"
 
-struct VGAMouse {
+struct VGAMouse : public MouseReceiver {
     VGAGraphics *graphics;
     
     volatile int mouse_x = 0, mouse_y = 0;
@@ -25,6 +26,10 @@ struct VGAMouse {
     void move_mouse(int x, int y);
     void hide_mouse();
     void draw_mouse();
+    
+    virtual void report_mouse_moved(int x, int y) {
+        move_mouse(x, y);
+    }
 };
 
 #endif

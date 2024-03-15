@@ -23,13 +23,9 @@
  *
  */
 
-#include "bsp/board.h"
-#include "tusb.h"
-#include "console.hpp"
-#include "mouse.hpp"
+#include "hid_app.hpp"
 
-extern VGAConsole *console;
-extern VGAMouse *mouse;
+HIDHost *usb_hid = 0;
 
 //--------------------------------------------------------------------+
 // MACRO TYPEDEF CONSTANT ENUM DECLARATION
@@ -37,27 +33,9 @@ extern VGAMouse *mouse;
 
 // If your host terminal support ansi escape code such as TeraTerm
 // it can be use to simulate mouse cursor movement within terminal
-#define USE_ANSI_ESCAPE   0
-
-#define MAX_REPORT  4
 
 static uint8_t const keycode2ascii[128][2] =  { HID_KEYCODE_TO_ASCII };
-
-// Each HID instance can has multiple reports
-static struct
-{
-  uint8_t report_count;
-  tuh_hid_report_info_t report_info[MAX_REPORT];
-}hid_info[CFG_TUH_HID];
-
-static void process_kbd_report(hid_keyboard_report_t const *report);
-static void process_mouse_report(hid_mouse_report_t const * report);
-static void process_generic_report(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uint16_t len);
-
-void hid_app_task(void)
-{
-  // nothing to do
-}
+static constexpr int NKEYS = (sizeof(keycode2ascii) / sizeof(keycode2ascii[0]));
 
 //--------------------------------------------------------------------+
 // TinyUSB Callbacks
@@ -68,7 +46,7 @@ void hid_app_task(void)
 // can be used to parse common/simple enough descriptor.
 // Note: if report descriptor length > CFG_TUH_ENUMERATION_BUFSIZE, it will be skipped
 // therefore report_desc = NULL, desc_len = 0
-void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_report, uint16_t desc_len)
+void HIDHost::tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_report, uint16_t desc_len)
 {
   printf("HID device address = %d, instance = %d is mounted\r\n", dev_addr, instance);
 
@@ -80,11 +58,18 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
 
   // By default host stack will use activate boot protocol on supported interface.
   // Therefore for this simple example, we only need to parse generic report descriptor (with built-in parser)
-  if ( itf_protocol == HID_ITF_PROTOCOL_NONE )
-  {
     hid_info[instance].report_count = tuh_hid_parse_report_descriptor(hid_info[instance].report_info, MAX_REPORT, desc_report, desc_len);
     printf("HID has %u reports \r\n", hid_info[instance].report_count);
-  }
+    
+    for (int i = 0; i < hid_info[instance].report_count; i++) 
+    {
+      if ((hid_info[instance].report_info[i].usage_page == HID_USAGE_PAGE_DESKTOP) && 
+          (hid_info[instance].report_info[i].usage == HID_USAGE_DESKTOP_KEYBOARD)) 
+      {
+          keybd_dev_addr = dev_addr;
+          keybd_instance = instance;
+      }
+    }
 
   // request to receive report
   // tuh_hid_report_received_cb() will be invoked when report is available
@@ -94,14 +79,33 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
   }
 }
 
+void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_report, uint16_t desc_len)
+{
+    if (usb_hid) {
+        usb_hid->tuh_hid_mount_cb(dev_addr, instance, desc_report, desc_len);
+    } else {
+        printf("tuh_hid_mount_cb trampoline error\n");
+    }
+}
+
+void HIDHost::tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance)
+{
+    printf("HID device address = %d, instance = %d is unmounted\r\n", dev_addr, instance);
+    keybd_dev_addr = 0xFF; // keyboard not available
+}
+
 // Invoked when device with hid interface is un-mounted
 void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance)
 {
-  printf("HID device address = %d, instance = %d is unmounted\r\n", dev_addr, instance);
+    if (usb_hid) {
+        usb_hid->tuh_hid_umount_cb(dev_addr, instance);
+    } else {
+        printf("tuh_hid_umount_cb trampoline error\n");
+    }
 }
 
 // Invoked when received report from device via interrupt endpoint
-void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uint16_t len)
+void HIDHost::tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uint16_t len)
 {
   uint8_t const itf_protocol = tuh_hid_interface_protocol(dev_addr, instance);
 
@@ -130,14 +134,24 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t cons
   }
 }
 
+void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uint16_t len)
+{
+    if (usb_hid) {
+        usb_hid->tuh_hid_report_received_cb(dev_addr, instance, report, len);
+    } else {
+        printf("tuh_hid_report_received_cb trampoline error\n");
+    }
+}
+
+
 //--------------------------------------------------------------------+
 // Keyboard
 //--------------------------------------------------------------------+
 
 // look up new key in previous keys
-static inline bool find_key_in_report(hid_keyboard_report_t const *report, uint8_t keycode)
+static inline bool find_key_in_report(hid_keyboard_report_t const *report, uint8_t keycode, int max_key)
 {
-  for(uint8_t i=0; i<6; i++)
+  for(uint8_t i=0; i<max_key; i++)
   {
     if (report->keycode[i] == keycode)  return true;
   }
@@ -145,85 +159,114 @@ static inline bool find_key_in_report(hid_keyboard_report_t const *report, uint8
   return false;
 }
 
-static void process_kbd_report(hid_keyboard_report_t const *report)
+void HIDHost::process_kbd_report(hid_keyboard_report_t const *report)
 {
-  static hid_keyboard_report_t prev_report = { 0, 0, {0} }; // previous report to check key released
-
-  //------------- example code ignore control (non-printable) key affects -------------//
-  for(uint8_t i=0; i<6; i++)
-  {
-    if ( report->keycode[i] )
+    // clear released keys in the auto repeat control
+    for (int i = 0; i < MAX_KEY; i++)
     {
-      if ( find_key_in_report(&prev_report, report->keycode[i]) )
-      {
-        // exist in previous report means the current key is holding
-      }else
-      {
-        // not existed in previous report means the current key is pressed
-        bool const is_shift = report->modifier & (KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT);
-        bool const is_ctrl = report->modifier & (KEYBOARD_MODIFIER_LEFTCTRL | KEYBOARD_MODIFIER_RIGHTCTRL);
-        uint8_t ch = is_ctrl ? (keycode2ascii[report->keycode[i]][0] - 'a' + 1) : keycode2ascii[report->keycode[i]][is_shift ? 1 : 0];
-        putchar(ch);
-        console->add_char(ch);
-        if ( ch == '\r' ) putchar('\n'); // added new line for enter key
-
-        fflush(stdout); // flush right away, else nanolib will wait for newline
+      if (repeat_keycode[i] && !find_key_in_report(report, repeat_keycode[i], MAX_KEY)) {
+        repeat_keycode[i] = 0;
+        repeat_char[i] = 0;
       }
     }
-    // TODO example skips key released
-  }
+    
+    // Check caps lock
+    capslock_key_down_in_this_report = find_key_in_report(report, HID_KEY_CAPS_LOCK, MAX_KEY);
+    if (capslock_key_down_in_this_report && !capslock_key_down_in_last_report)
+    {
+      // CAPS LOCK was pressed
+      capslock_on = !capslock_on;
+      if (capslock_on)
+      {
+        leds |= KEYBOARD_LED_CAPSLOCK;
+      }
+      else
+      {
+        leds &= ~KEYBOARD_LED_CAPSLOCK;
+      }
+    }
+    
+    
+  //------------- example code ignore control (non-printable) key affects -------------//
+    for(uint8_t i=0; i<MAX_KEY; i++) {
+        uint8_t key = report->keycode[i];
+        if (key == 0) continue;
+        if (key == HID_KEY_CAPS_LOCK) continue;
+    
+        if ( !find_key_in_report(&prev_keyboard_report, report->keycode[i], MAX_KEY) ) {
+            uint8_t ch = (key < NKEYS) ? keycode2ascii[key][0] : 0; // unshifted key code, to test for letters
+            bool const is_ctrl = report->modifier & (KEYBOARD_MODIFIER_LEFTCTRL | KEYBOARD_MODIFIER_RIGHTCTRL);
+            bool is_shift = report->modifier & (KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT);
+            bool is_alt = report->modifier & (KEYBOARD_MODIFIER_LEFTALT | KEYBOARD_MODIFIER_RIGHTALT);
+            
+            if (capslock_on && (ch >= 'a') && (ch <= 'z'))
+            {
+              // capslock affects only letters
+              is_shift = !is_shift;
+            }
+            ch = (key < NKEYS) ? keycode2ascii[key][is_shift ? 1 : 0] : 0;
+            
+            if (is_ctrl)
+            {
+              // control char
+              if ((ch >= 0x60) && (ch <= 0x7F))
+              {
+                ch = ch - 0x60;
+              }
+              else if ((ch >= 0x40) && (ch <= 0x5F))
+              {
+                ch = ch - 0x40;
+              }
+            }
+            
+            // record key for auto repeat
+            for (int j = 0; j < MAX_KEY; j++)
+            {
+              if (repeat_keycode[j] == 0)
+              {
+                repeat_keycode[j] = key;
+                repeat_char[j] = ch;
+                repeat_time[j] = time_us_64() + REPEAT_START;
+                break;
+              }
+            }
+            
+            put_kbd(ch);
+        }
+      // TODO example skips key released
+    }
 
-  prev_report = *report;
+    prev_keyboard_report = *report;
+    capslock_key_down_in_last_report = capslock_key_down_in_this_report;
 }
+
+void HIDHost::put_kbd(int ch)
+{
+    // char buf[10];
+    // sprintf(buf, "%d", ch);
+    // for (int i=0; buf[i]; i++) add_buf_key(buf[i]);
+    add_buf_key(ch);
+    // if (key_rec) key_rec->report_key_pressed(ch);
+    // putchar(ch);
+    // if ( ch == '\r' ) putchar('\n'); // added new line for enter key
+    // fflush(stdout); // flush right away, else nanolib will wait for newline
+}
+
 
 //--------------------------------------------------------------------+
 // Mouse
 //--------------------------------------------------------------------+
 
-void cursor_movement(int8_t x, int8_t y, int8_t wheel)
+void HIDHost::cursor_movement(int8_t x, int8_t y, int8_t wheel)
 {
-#if USE_ANSI_ESCAPE
-  // Move X using ansi escape
-  if ( x < 0)
-  {
-    printf(ANSI_CURSOR_BACKWARD(%d), (-x)); // move left
-  }else if ( x > 0)
-  {
-    printf(ANSI_CURSOR_FORWARD(%d), x); // move right
-  }
-
-  // Move Y using ansi escape
-  if ( y < 0)
-  {
-    printf(ANSI_CURSOR_UP(%d), (-y)); // move up
-  }else if ( y > 0)
-  {
-    printf(ANSI_CURSOR_DOWN(%d), y); // move down
-  }
-
-  // Scroll using ansi escape
-  if (wheel < 0)
-  {
-    printf(ANSI_SCROLL_UP(%d), (-wheel)); // scroll up
-  }else if (wheel > 0)
-  {
-    printf(ANSI_SCROLL_DOWN(%d), wheel); // scroll down
-  }
-
-  printf("\r\n");
-#else
-  printf("(%d %d %d)\r\n", x, y, wheel);
-  mouse->move_mouse(x, y);
-  
-#endif
+  //printf("(%d %d %d)\r\n", x, y, wheel);
+  if (mouse_rec) mouse_rec->report_mouse_moved(x, y);
 }
 
-static void process_mouse_report(hid_mouse_report_t const * report)
+void HIDHost::process_mouse_report(hid_mouse_report_t const * report)
 {
-  static hid_mouse_report_t prev_report = { 0 };
-
   //------------- button state  -------------//
-  uint8_t button_changed_mask = report->buttons ^ prev_report.buttons;
+  uint8_t button_changed_mask = report->buttons ^ prev_mouse_report.buttons;
   if ( button_changed_mask & report->buttons)
   {
     printf(" %c%c%c ",
@@ -234,12 +277,14 @@ static void process_mouse_report(hid_mouse_report_t const * report)
 
   //------------- cursor movement -------------//
   cursor_movement(report->x, report->y, report->wheel);
+  
+  prev_mouse_report = *report;
 }
 
 //--------------------------------------------------------------------+
 // Generic Report
 //--------------------------------------------------------------------+
-static void process_generic_report(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uint16_t len)
+void HIDHost::process_generic_report(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uint16_t len)
 {
   (void) dev_addr;
 
@@ -302,4 +347,36 @@ static void process_generic_report(uint8_t dev_addr, uint8_t instance, uint8_t c
       default: break;
     }
   }
+}
+
+void HIDHost::hid_app_task()
+{
+  // update keyboard leds
+  if (keybd_dev_addr != 0xFF)
+  { // only if keyboard attached
+    if (leds != prev_leds)
+    {
+      tuh_hid_set_report(keybd_dev_addr, keybd_instance, 0, HID_REPORT_TYPE_OUTPUT, &leds, sizeof(leds));
+      prev_leds = leds;
+    }
+
+    // auto-repeat keys
+    for (int i = 0; i < MAX_KEY; i++)
+    {
+      if (repeat_char[i] && (time_us_64() > repeat_time[i]))
+      {
+        put_kbd(repeat_char[i]);
+        repeat_time[i] += REPEAT_INTERVAL;
+      }
+    }
+  }
+}
+
+void hid_app_task()
+{
+    if (usb_hid) {
+        usb_hid->hid_app_task();
+    } else {
+        printf("hid_app_task trampoline error\n");
+    }
 }
