@@ -82,7 +82,13 @@ std::ostream& LispInterpreter::print_item(std::ostream& os, TokenPtr t)
     switch (t->type) {
     case Token::NONE:
         os << "()";
+        break;
     case Token::LIST:
+        os << '{';
+        print_list(os, t->list);
+        os << '}';
+        break;
+    case Token::INFIX:
         os << '(';
         print_list(os, t->list);
         os << ')';
@@ -391,6 +397,7 @@ TokenPtr LispInterpreter::parse_token(Parsing& p)
     case 0:
         return 0;
     case ')':
+    case '}':
         p.pop();
         return 0;
     case '\'':
@@ -426,13 +433,25 @@ TokenPtr LispInterpreter::parse_token(Parsing& p)
         p.skip();
         return t;
         
-    case '(':
+    case '{':
         p.skip();
         t = std::make_shared<Token>();
         t->type = Token::LIST;
         t->list = parse_string(p);
         t->quote = quote;
         return t;
+        
+    case '(':
+        p.skip();
+        t = std::make_shared<Token>();
+        t->type = Token::INFIX;
+        t->list = parse_string(p);
+        t->quote = quote;
+        if (quote) {
+            return t;
+        } else {
+            return transform_infix(t);
+        }
     }
     
     if (isdigit(first) || first == '.' || first == '-' || first == '+') {
@@ -585,13 +604,14 @@ std::string Token::string_val(TokenPtr item)
     return ss.str();
 }
 
-void LispInterpreter::addOperator(const std::string& name, built_in_f f)
+void LispInterpreter::addOperator(const std::string& name, built_in_f f, int precedence)
 {
     SymbolPtr s = interns.find(name.data(), name.length());
     TokenPtr t = std::make_shared<Token>();
     t->type = Token::OPER;
     t->oper = f;
     t->sym = s;
+    t->precedence = precedence;
     globals->set(s, t);
 }
 
@@ -1003,6 +1023,155 @@ static TokenPtr builtin_not(TokenPtr item, ContextPtr context)
     return c->ival ? Token::zero : Token::negone;
 }
 
+static char precedence[][2] = {
+    '+', 0,
+    '-', 0,
+    '*', 1,
+    '/', 1,
+};
+static constexpr int num_precedence = sizeof(precedence) / sizeof(precedence[0]);
+
+static int get_precedence(char op)
+{
+    for (int i=0; i<num_precedence; i++) {
+        if (op == precedence[i][0]) return precedence[i][1];
+    }
+    return -1;
+}
+
+static TokenPtr builtin_infix(TokenPtr item, ContextPtr context)
+{
+    std::vector<TokenPtr> stack;
+    TokenPtr l, c, n;
+    int p1, p2;
+    
+    while (item) {
+        switch (item->type) {
+        case Token::INT:
+        case Token::FLOAT:
+        case Token::STR:
+            if (!c) {
+                c = Token::duplicate(item);
+                l = c;
+            } else {
+                n = Token::duplicate(item);
+                c->next = n;
+                c = n;
+            }
+            break;
+        case Token::SYM:
+            p1 = get_precedence(*(item->sym->p));
+            while (stack.size()) {
+                TokenPtr o2 = stack.back();
+                p2 = get_precedence(*(o2->sym->p));
+                if (p2 < p1) break;
+                stack.pop_back();
+                if (!c) {
+                    c = Token::duplicate(o2);
+                    l = c;
+                } else {
+                    n = Token::duplicate(o2);
+                    c->next = n;
+                    c = n;
+                }
+            }
+            stack.push_back(item);
+            break;
+        case Token::LIST:
+            n = builtin_infix(item->list, context);
+            if (!c) {
+                c = n;
+                l = c;
+            } else {
+                c->next = n;
+                c = n;
+            }            
+            break;
+        }
+        
+        item = item->next;
+    }
+    
+    while (stack.size()) {
+        TokenPtr o2 = stack.back();
+        stack.pop_back();
+        if (!c) {
+            c = Token::duplicate(o2);
+            l = c;
+        } else {
+            n = Token::duplicate(o2);
+            c->next = n;
+            c = n;
+        }
+    }
+    
+    return Token::as_list(l);
+}
+
+TokenPtr LispInterpreter::transform_infix(TokenPtr list)
+{
+    std::vector<TokenPtr> stack, queue;
+    int p1, p2;
+    
+    if (list->type != Token::INFIX) return list;
+    
+    std::cout << "Infix list: ";
+    print_list(std::cout, list);
+    std::cout << std::endl;
+    
+    TokenPtr item = list->list;
+    
+    while (item) {
+        switch (item->type) {
+        case Token::INT:
+        case Token::FLOAT:
+        case Token::STR:
+        case Token::LIST:
+            queue.push_back(item);
+            break;
+        case Token::SYM:
+            p1 = item->precedence;
+            while (stack.size()) {
+                TokenPtr o2 = stack.back();
+                p2 = o2->precedence;
+                if (p2 < p1) break;
+                stack.pop_back();
+                queue.push_back(o2);
+            }
+            stack.push_back(item);
+            break;
+        case Token::INFIX:
+            queue.push_back(transform_infix(item->list));
+            break;
+        }
+        
+        item = item->next;
+    }
+    
+    while (stack.size()) {
+        TokenPtr o2 = stack.back();
+        stack.pop_back();
+        queue.push_back(o2);
+    }
+    
+    for (int i=0; i+3<=queue.size();) {
+        TokenPtr a = queue[i++];
+        TokenPtr b = queue[i++];
+        TokenPtr op = queue[i];
+        op->next = a;
+        a->next = b;
+        b->next = 0;
+        queue[i] = Token::as_list(op);
+    }
+    
+    std::cout << "Transformed list: ";
+    print_list(std::cout, queue.back());
+    std::cout << std::endl;
+    
+    return queue.back();
+}
+
+
 int main() {
     // const char *floatStr = "3.14e2";
     // int length = strlen(floatStr);
@@ -1011,11 +1180,11 @@ int main() {
     // printf("Parsed value: %f\n", value);
     
     LispInterpreter li;
-    li.addOperator("+", builtin_add);
-    li.addOperator("*", builtin_mul);
-    li.addOperator("-", builtin_sub);
-    li.addOperator("/", builtin_div);
-    li.addOperator("%", builtin_mod);
+    li.addOperator("+", builtin_add, 0);
+    li.addOperator("*", builtin_mul, 1);
+    li.addOperator("-", builtin_sub, 0);
+    li.addOperator("/", builtin_div, 1);
+    li.addOperator("%", builtin_mod, 1);
 
     li.addOperator("&", builtin_and);
     li.addOperator("|", builtin_or);
@@ -1036,6 +1205,8 @@ int main() {
     
     li.addOperator("cat", builtin_cat);
     li.addOperator("defun", builtin_defun);
+    
+    li.addOperator("@", builtin_infix);
     
     for (std::string line; std::getline(std::cin, line);) {
         TokenPtr p = li.evaluate_string(line);
