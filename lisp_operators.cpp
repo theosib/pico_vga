@@ -88,58 +88,116 @@ static TokenPtr pow_two(TokenPtr a, TokenPtr b, LispInterpreter *interp)
     }
 }
 
-static TokenPtr lt_two(TokenPtr a, TokenPtr b, LispInterpreter *interp)
+static TokenPtr eq_two(TokenPtr a, TokenPtr b, LispInterpreter *interp)
 {
-    if (!a && !b) return Token::zero;
+    if (!a && !b) return Token::bool_true;
     if (!a) {
         if (b->type == Token::LIST || b->type == Token::INFIX) {
-            return !b->list ? Token::negone : Token::zero;
+            return !b->list ? Token::bool_true : Token::bool_false;
         } else {
-            return Token::negone;
+            return Token::bool_false;
         }
     }
     if (!b) {
         if (a->type == Token::LIST || a->type == Token::INFIX) {
-            return !a->list ? Token::zero : Token::negone;
+            return !a->list ? Token::bool_true : Token::bool_false;
         } else {
-            return Token::zero;
+            return Token::bool_false;
         }
     }
     
     if ((a->type == Token::LIST || a->type == Token::INFIX) && (b->type == Token::LIST || b->type == Token::INFIX)) {
         a = a->list;
         b = b->list;
-        // Make sure at least one is lessthan
         while (a && b) {
-            TokenPtr c = lt_two(a, b, interp);
-            if (!c->ival) return Token::zero;
+            TokenPtr c = eq_two(a, b, interp);
+            if (!c->ival) return Token::bool_false;
         }
-        if (a || b) return Token::zero;
-        return Token::negone;
+        if (a || b) return Token::bool_false;
+        return Token::bool_true;
     }
     
     if (a->type == Token::SYM && b->type == Token::SYM) {
-        return a->sym->index == b->sym->index ? Token::zero : Token::negone;
+        return a->sym->index == b->sym->index ? Token::bool_true : Token::bool_false;
     }
-    if (a->type == Token::SYM || b->type == Token::SYM) return Token::zero;
+    if (a->type == Token::SYM || b->type == Token::SYM) return Token::bool_false;
     
     if (a->type == Token::STR && b->type == Token::STR) {
-        if (a->sym->index == b->sym->index) return Token::zero;
+        return a->sym->index == b->sym->index ? Token::bool_true : Token::bool_false;
     }
     if (a->type == Token::STR || b->type == Token::STR) {
-        int c = strcmp(Token::string_val(a).c_str(), Token::string_val(b).c_str());
-        return (c < 0) ? Token::negone : Token::zero;
+        return Token::string_val(a) == Token::string_val(b) ? Token::bool_true : Token::bool_false;
     }
     
     if (a->type == Token::FLOAT || b->type == Token::FLOAT) {
-        return Token::float_val(a) < Token::float_val(b) ? Token::negone : Token::zero;
+        return Token::float_val(a) == Token::float_val(b) ? Token::bool_true : Token::bool_false;
     }
 
-    if (a->type == Token::INT && b->type == Token::INT) {
-        return a->ival < b->ival ? Token::negone : Token::zero;
+    if ((a->type == Token::INT || a->type == Token::BOOL) && (b->type == Token::INT || b->type == Token::BOOL)) {
+        return a->ival == b->ival ? Token::bool_true : Token::bool_false;
     }
     
-    return Token::zero;
+    return Token::bool_false;
+}
+
+static TokenPtr lt_two(TokenPtr a, TokenPtr b, LispInterpreter *interp)
+{
+    if (!a && !b) return Token::bool_false;
+    if (!a) {
+        if (b->type == Token::LIST || b->type == Token::INFIX) {
+            return !b->list ? Token::bool_true : Token::bool_false;
+        } else {
+            return Token::bool_true;
+        }
+    }
+    if (!b) {
+        if (a->type == Token::LIST || a->type == Token::INFIX) {
+            return !a->list ? Token::bool_false : Token::bool_true;
+        } else {
+            return Token::bool_false;
+        }
+    }
+    
+    if ((a->type == Token::LIST || a->type == Token::INFIX) && (b->type == Token::LIST || b->type == Token::INFIX)) {
+        a = a->list;
+        b = b->list;
+        bool got_lt = false;
+        while (a && b) {
+            TokenPtr c = lt_two(a, b, interp);
+            if (c->ival) {
+                got_lt = true;
+            } else {
+                c = eq_two(a, b, interp);
+                if (!c->ival) return Token::bool_false;
+            }
+        }
+        if (a) return Token::bool_false;
+        if (b) return Token::bool_true;
+        return got_lt ? Token::bool_true : Token::bool_false;
+    }
+    
+    if (a->type == Token::SYM && b->type == Token::SYM) {
+        return a->sym->index == b->sym->index ? Token::bool_false : Token::bool_true;
+    }
+    if (a->type == Token::SYM || b->type == Token::SYM) return Token::bool_false;
+    
+    if (a->type == Token::STR && b->type == Token::STR) {
+        if (a->sym->index == b->sym->index) return Token::bool_false;
+    }
+    if (a->type == Token::STR || b->type == Token::STR) {
+        int c = strcmp(Token::string_val(a).c_str(), Token::string_val(b).c_str());
+        return (c < 0) ? Token::bool_true : Token::bool_false;
+    }
+    
+    if (a->type == Token::FLOAT || b->type == Token::FLOAT) {
+        return Token::float_val(a) < Token::float_val(b) ? Token::bool_true : Token::bool_false;
+    }
+
+    if ((a->type == Token::INT || a->type == Token::BOOL) && (b->type == Token::INT || b->type == Token::BOOL)) {
+        return a->ival < b->ival ? Token::bool_true : Token::bool_false;
+    }
+    
+    return Token::bool_false;
 }
 
 static TokenPtr gt_two(TokenPtr a, TokenPtr b, LispInterpreter *interp)
@@ -149,75 +207,28 @@ static TokenPtr gt_two(TokenPtr a, TokenPtr b, LispInterpreter *interp)
 
 static TokenPtr le_two(TokenPtr a, TokenPtr b, LispInterpreter *interp)
 {
-    return lt_two(b, a, interp)->ival ? Token::zero : Token::negone;
+    return lt_two(b, a, interp)->ival ? Token::bool_false : Token::bool_true;
 }
 
 static TokenPtr ge_two(TokenPtr a, TokenPtr b, LispInterpreter *interp)
 {
-    return lt_two(a, b, interp)->ival ? Token::zero : Token::negone;
-}
-
-static TokenPtr eq_two(TokenPtr a, TokenPtr b, LispInterpreter *interp)
-{
-    if (!a && !b) return Token::negone;
-    if (!a) {
-        if (b->type == Token::LIST || b->type == Token::INFIX) {
-            return !b->list ? Token::negone : Token::zero;
-        } else {
-            return Token::zero;
-        }
-    }
-    if (!b) {
-        if (a->type == Token::LIST || a->type == Token::INFIX) {
-            return !a->list ? Token::negone : Token::zero;
-        } else {
-            return Token::zero;
-        }
-    }
-    
-    if ((a->type == Token::LIST || a->type == Token::INFIX) && (b->type == Token::LIST || b->type == Token::INFIX)) {
-        a = a->list;
-        b = b->list;
-        while (a && b) {
-            TokenPtr c = eq_two(a, b, interp);
-            if (!c->ival) return Token::zero;
-        }
-        if (a || b) return Token::zero;
-        return Token::negone;
-    }
-    
-    if (a->type == Token::SYM && b->type == Token::SYM) {
-        return a->sym->index == b->sym->index ? Token::negone : Token::zero;
-    }
-    if (a->type == Token::SYM || b->type == Token::SYM) return Token::zero;
-    
-    if (a->type == Token::STR && b->type == Token::STR) {
-        return a->sym->index == b->sym->index ? Token::negone : Token::zero;
-    }
-    if (a->type == Token::STR || b->type == Token::STR) {
-        return Token::string_val(a) == Token::string_val(b) ? Token::negone : Token::zero;
-    }
-    
-    if (a->type == Token::FLOAT || b->type == Token::FLOAT) {
-        return Token::float_val(a) == Token::float_val(b) ? Token::negone : Token::zero;
-    }
-
-    if (a->type == Token::INT && b->type == Token::INT) {
-        return a->ival == b->ival ? Token::negone : Token::zero;
-    }
-    
-    return Token::zero;
+    return lt_two(a, b, interp)->ival ? Token::bool_false : Token::bool_true;
 }
 
 static TokenPtr ne_two(TokenPtr a, TokenPtr b, LispInterpreter *interp)
 {
     TokenPtr c = eq_two(a, b, interp);
-    return c->ival ? Token::zero : Token::negone;
+    return c->ival ? Token::bool_false : Token::bool_true;
 }
 
-static TokenPtr and_two(TokenPtr a, TokenPtr b, LispInterpreter *interp)
+static TokenPtr and_two_bitwise(TokenPtr a, TokenPtr b, LispInterpreter *interp)
 {
     return Token::make_int(Token::int_val(a) & Token::int_val(b));
+}
+
+static TokenPtr and_two_bool(TokenPtr a, TokenPtr b, LispInterpreter *interp)
+{
+    return (Token::bool_val(a) && Token::bool_val(b)) ? Token::bool_true : Token::bool_false;
 }
 
 static TokenPtr or_two(TokenPtr a, TokenPtr b, LispInterpreter *interp)
@@ -225,9 +236,24 @@ static TokenPtr or_two(TokenPtr a, TokenPtr b, LispInterpreter *interp)
     return Token::make_int(Token::int_val(a) | Token::int_val(b));
 }
 
-static TokenPtr xor_two(TokenPtr a, TokenPtr b, LispInterpreter *interp)
+static TokenPtr or_two_bitwise(TokenPtr a, TokenPtr b, LispInterpreter *interp)
+{
+    return Token::make_int(Token::int_val(a) | Token::int_val(b));
+}
+
+static TokenPtr or_two_bool(TokenPtr a, TokenPtr b, LispInterpreter *interp)
+{
+    return (Token::bool_val(a) || Token::bool_val(b)) ? Token::bool_true : Token::bool_false;
+}
+
+static TokenPtr xor_two_bitwise(TokenPtr a, TokenPtr b, LispInterpreter *interp)
 {
     return Token::make_int(Token::int_val(a) ^ Token::int_val(b));
+}
+
+static TokenPtr xor_two_bool(TokenPtr a, TokenPtr b, LispInterpreter *interp)
+{
+    return (Token::bool_val(a) != Token::bool_val(b)) ? Token::bool_true : Token::bool_false;
 }
 
 
@@ -259,19 +285,34 @@ static TokenPtr builtin_cat(TokenPtr list, ContextPtr context)
     return oper_reduce_list(list, context, context->interp->empty_string, cat_two);
 }
 
-static TokenPtr builtin_and(TokenPtr list, ContextPtr context)
+static TokenPtr builtin_and_bitwise(TokenPtr list, ContextPtr context)
 {
-    return oper_reduce_list(list, context, Token::negone, and_two);
+    return oper_reduce_list(list, context, Token::negone, and_two_bitwise);
 }
 
-static TokenPtr builtin_or(TokenPtr list, ContextPtr context)
+static TokenPtr builtin_and_bool(TokenPtr list, ContextPtr context)
 {
-    return oper_reduce_list(list, context, Token::zero, or_two);
+    return oper_reduce_list(list, context, Token::bool_true, and_two_bool);
 }
 
-static TokenPtr builtin_xor(TokenPtr list, ContextPtr context)
+static TokenPtr builtin_or_bitwise(TokenPtr list, ContextPtr context)
 {
-    return oper_reduce_list(list, context, Token::zero, xor_two);
+    return oper_reduce_list(list, context, Token::zero, or_two_bitwise);
+}
+
+static TokenPtr builtin_or_bool(TokenPtr list, ContextPtr context)
+{
+    return oper_reduce_list(list, context, Token::bool_false, or_two_bool);
+}
+
+static TokenPtr builtin_xor_bitwise(TokenPtr list, ContextPtr context)
+{
+    return oper_reduce_list(list, context, Token::zero, xor_two_bitwise);
+}
+
+static TokenPtr builtin_xor_bool(TokenPtr list, ContextPtr context)
+{
+    return oper_reduce_list(list, context, Token::bool_false, xor_two_bool);
 }
 
 static TokenPtr oper_reduce_two(TokenPtr list, ContextPtr context, combine_f comb)
@@ -342,42 +383,39 @@ static TokenPtr builtin_ge(TokenPtr list, ContextPtr context)
 
 static TokenPtr builtin_notzero(TokenPtr item, ContextPtr context)
 {
-    if (!item) return Token::zero;
-    
-    switch (item->type) {
-    case Token::STR:
-        {
-            SymbolPtr s = item->sym;
-            if (s->len == 0) return Token::zero;
-            if (s->p[0] == '0') return Token::zero;
-            return Token::negone;
-        }
-        
-    case Token::INT:
-        return item->ival ? Token::negone : Token::zero;
-    
-    case Token::FLOAT:
-        return item->fval ? Token::negone : Token::zero;
-        
-    case Token::SYM:
-        return Token::negone;
-        
-    case Token::LIST:
-        return item->list ? Token::negone : Token::zero;
-    }
-    
-    return Token::negone;
+    return Token::as_bool(item);
 }
 
-static TokenPtr builtin_not(TokenPtr item, ContextPtr context)
+static TokenPtr builtin_not_bool(TokenPtr item, ContextPtr context)
 {
-    TokenPtr c = builtin_notzero(item, context);
-    return c->ival ? Token::zero : Token::negone;
+    return Token::bool_val(item) ? Token::bool_false : Token::bool_true;
 }
 
+static TokenPtr builtin_not_bitwise(TokenPtr item, ContextPtr context)
+{
+    return Token::make_int(~Token::int_val(item));
+}
+
+static TokenPtr builtin_neg(TokenPtr item, ContextPtr context)
+{
+    TokenPtr a = Token::as_number(item);
+    if (a->type == Token::FLOAT) {
+        return Token::make_float(-a->fval);
+    } else {
+        return Token::make_int(-a->ival);
+    }
+}
+
+static TokenPtr builtin_identity(TokenPtr item, ContextPtr context)
+{
+    return item;
+}
 
 void LispInterpreter::loadOperators()
 {
+    globals->set(find_symbol("true"), Token::bool_true);
+    globals->set(find_symbol("false"), Token::bool_false);
+    
     addOperator("+", builtin_add, 4);
     addOperator("-", builtin_sub, 4);
     addOperator("*", builtin_mul, 3);
@@ -385,17 +423,21 @@ void LispInterpreter::loadOperators()
     addOperator("%", builtin_mod, 3);
     addOperator("**", builtin_pow, 1, Token::RASSOC);
 
-    addOperator("&", builtin_and, 8);
-    addOperator("&&", builtin_and, 8);
-    addOperator("|", builtin_or, 9);
-    addOperator("||", builtin_or, 9);
-    addOperator("^", builtin_xor, 10);
-    addOperator("and", builtin_and, 8);
-    addOperator("or", builtin_or, 8);
-    addOperator("xor", builtin_xor, 10);
+    addOperator("&", builtin_and_bitwise, 8);
+    addOperator("^", builtin_xor_bitwise, 9);
+    addOperator("|", builtin_or_bitwise, 10);
+    
+    addOperator("&&", builtin_and_bool, 11);
+    addOperator("and", builtin_and_bool, 11);
+    addOperator("||", builtin_or_bool, 12);
+    addOperator("or", builtin_or_bool, 12);
+    addOperator("xor", builtin_or_bool, 13);
+    
     addOperator("!!", builtin_notzero, 2, Token::UNARY);
-    addOperator("!", builtin_not, 2, Token::UNARY);
-    addOperator("not", builtin_not, 2, Token::UNARY);
+    addOperator("!", builtin_not_bool, 2, Token::UNARY);
+    addOperator("not", builtin_not_bool, 2, Token::UNARY);
+    addOperator("~", builtin_not_bitwise, 2, Token::UNARY);
+    addOperator("neg", builtin_neg, 2, Token::UNARY);
     
     addOperator("=", builtin_eq, 7);
     addOperator("==", builtin_eq, 7);
@@ -409,6 +451,11 @@ void LispInterpreter::loadOperators()
     addOperator("<=", builtin_le, 6);
     addOperator(">=", builtin_ge, 6);
     
-    addOperator("cat", builtin_cat);
+    addOperator("cat", builtin_cat, 0);
+    addOperator("identity", builtin_identity, 0, Token::UNARY);
     addOperator("defun", builtin_defun);
+    
+    // int, floor, ceil, round, float, bool, bitwise operators, bitwise not
+    // Adding to item list requires duplication if next is not null
+    
 }

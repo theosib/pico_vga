@@ -54,6 +54,8 @@ SymbolPtr Interns::find(const char *p, int len)
 TokenPtr Token::zero = Token::make_int(0);
 TokenPtr Token::one = Token::make_int(1);
 TokenPtr Token::negone = Token::make_int(-1);
+TokenPtr Token::bool_true = Token::make_bool(true);
+TokenPtr Token::bool_false = Token::make_bool(false);
 
 TokenPtr Token::make_string(LispInterpreter *interp, const char *p, int len)
 {
@@ -67,6 +69,7 @@ TokenPtr Token::make_string(LispInterpreter *interp, const char *p, int len)
 TokenPtr Token::as_number(TokenPtr item)
 {
     if (!item) return zero;
+    if (item->type == BOOL) return make_bool(item->ival);
     if (item->type == INT || item->type == FLOAT) return item;
     if (item->type == STR) {
         Parsing p(item->sym->p, item->sym->len);
@@ -75,6 +78,24 @@ TokenPtr Token::as_number(TokenPtr item)
     }
     return zero;
 }
+
+TokenPtr Token::as_bool(TokenPtr item)
+{
+    if (!item) return bool_false;
+    if (item->type == BOOL) return item;
+    if (item->type == INT) return (item->ival ? bool_true : bool_false);
+    if (item->type == FLOAT) return (item->fval ? bool_true : bool_false);
+    if (item->type == STR) return (item->sym->len && item->sym->p[0]!='0') ? bool_true : bool_false;
+    if (item->type == SYM) return bool_true;
+    if (item->type == LIST || item->type == INFIX) return (item->list ? bool_true : bool_false);
+    return bool_false;
+}
+
+bool Token::bool_val(TokenPtr item)
+{
+    return as_bool(item)->ival;
+}
+
 
 TokenPtr Token::as_int(TokenPtr item)
 {
@@ -100,7 +121,7 @@ float Token::float_val(TokenPtr item)
 {
     if (!item) return 0;
     if (item->type == FLOAT) return item->fval;
-    if (item->type == INT) return item->ival;
+    if (item->type == INT || item->type == BOOL) return item->ival;
     if (item->type == STR) {
         Parsing p(item->sym->p, item->sym->len);
         TokenPtr t = parse_number(p);
@@ -114,7 +135,7 @@ int Token::int_val(TokenPtr item)
 {
     if (!item) return 0;
     if (item->type == FLOAT) return item->fval;
-    if (item->type == INT) return item->ival;
+    if (item->type == INT || item->type == BOOL) return item->ival;
     if (item->type == STR) {
         Parsing p(item->sym->p, item->sym->len);
         TokenPtr t = parse_number(p);
@@ -316,30 +337,31 @@ TokenPtr LispInterpreter::transform_infix(TokenPtr list)
     
     while (item) {
         switch (item->type) {
-        case Token::INT:
-        case Token::FLOAT:
-        case Token::STR:
-        case Token::LIST:
-            queue.push_back(item);
-            break;
         case Token::SYM:
             oper = globals->get(item->sym);
-            item->precedence = oper->precedence;
-            item->order = oper->order;
-            p1 = item->precedence;
-            std::cout << "p1=" << p1 << std::endl;
-            while (stack.size()) {
-                TokenPtr o2 = stack.back();
-                p2 = o2->precedence;
-                std::cout << "p2=" << p2 << std::endl;
-                if ((o2->order == Token::LASSOC && p2 > p1) || (o2->order != Token::LASSOC && p2 >= p1)) break;
-                stack.pop_back();
-                queue.push_back(o2);
+            if (oper && oper->type == Token::OPER) {
+                item->precedence = oper->precedence;
+                item->order = oper->order;
+                p1 = item->precedence;
+                std::cout << "p1=" << p1 << std::endl;
+                while (stack.size()) {
+                    TokenPtr o2 = stack.back();
+                    p2 = o2->precedence;
+                    std::cout << "p2=" << p2 << std::endl;
+                    if ((o2->order == Token::LASSOC && p2 > p1) || (o2->order != Token::LASSOC && p2 >= p1)) break;
+                    stack.pop_back();
+                    queue.push_back(o2);
+                }
+                // Make sure this item is marked as an operator
+                if (!item->precedence) item->precedence = 1;
             }
             stack.push_back(item);
             break;
         case Token::INFIX:
             queue.push_back(transform_infix(item->list));
+            break;
+        default:
+            queue.push_back(item);
             break;
         }
         
@@ -361,14 +383,23 @@ TokenPtr LispInterpreter::transform_infix(TokenPtr list)
     
     stack.clear();
     
+    if (queue.size() < 2) {
+        TokenPtr item = Token::make_string(this, std::string_view("identity"));
+        item->type = Token::SYM;
+        item->precedence = 1;
+        item->order = Token::UNARY;
+        queue.push_back(item);
+    }
+    
     for (int i=0; i<queue.size(); i++) {
         TokenPtr c = queue[i];
-        if (c->type == Token::SYM) {
+        if (c->type == Token::SYM && c->precedence) {
             if (c->order == Token::UNARY) {
                 TokenPtr a = stack.back(); stack.pop_back();
                 c->next = a;
                 a->next = 0;
             } else {
+                if (stack.size() < 2) return 0;
                 TokenPtr b = stack.back(); stack.pop_back();
                 TokenPtr a = stack.back(); stack.pop_back();
                 c->next = a;

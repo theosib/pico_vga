@@ -28,8 +28,11 @@ std::ostream& LispInterpreter::print_item(std::ostream& os, TokenPtr t)
 {
     if (t->quote) os << '\'';
     switch (t->type) {
+    case Token::BOOL:
+        os << (t->ival ? "true" : "false");
+        break;
     case Token::NONE:
-        os << "()";
+        os << "nil";
         break;
     case Token::LIST:
         os << '{';
@@ -53,6 +56,8 @@ std::ostream& LispInterpreter::print_item(std::ostream& os, TokenPtr t)
         os << t->fval;
         break;
     case Token::FUNC:
+        os << "func(" << t->sym << ")";
+        break;
     case Token::OPER:
     case Token::SYM:
         os << t->sym;
