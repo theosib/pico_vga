@@ -10,15 +10,57 @@ static TokenPtr builtin_defun(TokenPtr list, ContextPtr context)
         printf("Function doesn't start with symbol name\n");
         return 0;
     }
-    // XXX Check arg list
+    
+    TokenPtr args, body;
+    if (!list->next || !list->next->next) {
+        printf("Function definition requires args list and body");
+        return 0;
+    }
+    args = list->next;
+    
+    if (args->type != Token::LIST) {
+        printf("Function definition requires list of args");
+        return 0;
+    }
+        
+    SymbolPtr name = list->sym;
+    context = context->get_owner(name);
+    
     TokenPtr t = std::make_shared<Token>();
     t->type = Token::FUNC;
-    t->sym = list->sym;
-    t->list = list->next;
-    context->set(list->sym, t);
+    t->sym = name;
+    t->list = args;
+    t->context = context;
+    context->set(name, t);
     return t;
 }
 
+static TokenPtr builtin_defclass(TokenPtr list, ContextPtr context)
+{
+    std::cout << "declass: ";
+    LispInterpreter::print_list(std::cout, list);
+    std::cout << std::endl;
+    
+    if (list->type != Token::SYM) {
+        printf("Class doesn't start with symbol name\n");
+        return 0;
+    }
+    
+    SymbolPtr name = list->sym;
+    context = context->get_owner(name);
+    
+    TokenPtr t = std::make_shared<Token>();
+    t->type = Token::CLASS;
+    t->sym = name;
+    t->context = context->make_child_class(name);
+    context->set(name, t);
+    
+    // Execute code
+    TokenPtr body = list->next;
+    context->interp->evaluate_list(body, t->context);
+    
+    return t;
+}
 
 static TokenPtr cat_two(TokenPtr a, TokenPtr b, LispInterpreter *interp)
 {
@@ -408,8 +450,99 @@ static TokenPtr builtin_neg(TokenPtr item, ContextPtr context)
 
 static TokenPtr builtin_identity(TokenPtr item, ContextPtr context)
 {
-    return item;
+    return context->interp->evaluate_list(item);
 }
+
+static TokenPtr builtin_str(TokenPtr item, ContextPtr context)
+{
+    return Token::as_string(context->interp, item);
+}
+
+
+static TokenPtr builtin_int(TokenPtr item, ContextPtr context)
+{
+    if (item->type == Token::INT) return item;
+    return Token::as_int(item);
+}
+
+static TokenPtr builtin_floor(TokenPtr item, ContextPtr context)
+{
+    if (item->type == Token::INT) return item;
+    float cf = floor(Token::float_val(item));
+    if (isfinite(cf) && cf <= std::numeric_limits<int>::max() && cf >= std::numeric_limits<int>::min()) {
+        return Token::make_int(cf);
+    } else {
+        return Token::make_float(cf);
+    }
+}
+
+static TokenPtr builtin_ceil(TokenPtr item, ContextPtr context)
+{
+    if (item->type == Token::INT) return item;
+    float cf = ceil(Token::float_val(item));
+    if (isfinite(cf) && cf <= std::numeric_limits<int>::max() && cf >= std::numeric_limits<int>::min()) {
+        return Token::make_int(cf);
+    } else {
+        return Token::make_float(cf);
+    }
+}
+
+static TokenPtr builtin_round(TokenPtr item, ContextPtr context)
+{
+    if (item->type == Token::INT) return item;
+    float cf = round(Token::float_val(item));
+    if (isfinite(cf) && cf <= std::numeric_limits<int>::max() && cf >= std::numeric_limits<int>::min()) {
+        return Token::make_int(cf);
+    } else {
+        return Token::make_float(cf);
+    }
+}
+
+static TokenPtr builtin_set(TokenPtr item, ContextPtr caller)
+{
+    if (item->type != Token::SYM) return 0; // exception
+    SymbolPtr name = item->sym;
+    ContextPtr owner = caller->get_owner(name);
+    TokenPtr val = caller->interp->evaluate_list(item->next, caller);
+    owner->set(name, val);
+    return val;
+}
+
+static TokenPtr builtin_set_obj(TokenPtr item, ContextPtr caller)
+{
+    if (item->type != Token::SYM) return 0; // exception
+    SymbolPtr name = item->sym;    
+    ContextPtr owner = caller;
+    
+    std::cout << "Type=" << int(owner->type) << " name=" << owner->name << std::endl;
+    while (owner && owner->type != Token::OBJECT) {
+        owner = owner->parent;
+        if (owner) std::cout << "Type=" << int(owner->type) << " name=" << owner->name << std::endl;
+    }
+    if (!owner) {
+        std::cout << "No object context for " << name << std::endl;
+        return 0; // Exception
+    }
+    TokenPtr val = caller->interp->evaluate_list(item->next, caller);
+    owner->set(name, val);
+    return val;
+}
+
+static TokenPtr builtin_set_class(TokenPtr item, ContextPtr caller)
+{
+    if (item->type != Token::SYM) return 0; // exception
+    SymbolPtr name = item->sym;
+    ContextPtr owner = caller;
+    while (owner && owner->type != Token::CLASS) owner = owner->parent;
+    if (!owner) {
+        std::cout << "No class context for " << name << std::endl;
+        return 0; // Exception
+    }
+    TokenPtr val = caller->interp->evaluate_list(item->next, caller);
+    owner->set(name, val);
+    return val;
+}
+
 
 void LispInterpreter::loadOperators()
 {
@@ -452,10 +585,59 @@ void LispInterpreter::loadOperators()
     addOperator(">=", builtin_ge, 6);
     
     addOperator("cat", builtin_cat, 0);
+    addOperator("func", builtin_defun);
+    addOperator("set", builtin_set);
+    addOperator("set@", builtin_set_obj);
+    addOperator("set@@", builtin_set_class);
+    addOperator("class", builtin_defclass);
+
     addOperator("identity", builtin_identity, 0, Token::UNARY);
-    addOperator("defun", builtin_defun);
+    addOperator("int", builtin_int, 0, Token::UNARY);
+    addOperator("floor", builtin_floor, 0, Token::UNARY);
+    addOperator("ceil", builtin_ceil, 0, Token::UNARY);
+    addOperator("round", builtin_round, 0, Token::UNARY);
+    addOperator("str", builtin_str, 0, Token::UNARY);
     
     // int, floor, ceil, round, float, bool, bitwise operators, bitwise not
-    // Adding to item list requires duplication if next is not null
+    // Adding to item list requires duplication
+    // Lists are immutable
     
+    /*
+    is-int (check if integer)
+    is-float (check if float)
+    is-str (check if string)
+    is-fn (check if function)
+    is-symbol (check if symbol)
+    
+    first (element of list)
+    rest (list of remaining elements)
+    prepend (new list starting with new element)
+    append (new list with new element at end)
+    
+    set local or relative
+    set$ global
+    set@ instance
+    set@@ class
+    
+    func local or relative
+    func@ instance
+    func@@ class
+    func$ global
+    
+    unlist operator maybe backslash
+    
+    if ()
+    while 
+    
+    filesystem
+    ls
+    del
+    load
+    save
+    
+    Exceptions!
+    throw
+    try
+    catch
+    */
 }

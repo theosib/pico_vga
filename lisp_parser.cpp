@@ -24,7 +24,7 @@ std::ostream& Token::print_string(std::ostream& os, const char *s, int len)
     return os;
 }
 
-std::ostream& LispInterpreter::print_item(std::ostream& os, TokenPtr t)
+std::ostream& LispInterpreter::print_item(std::ostream& os, TokenPtr t, ContextPtr context)
 {
     if (t->quote) os << '\'';
     switch (t->type) {
@@ -56,24 +56,33 @@ std::ostream& LispInterpreter::print_item(std::ostream& os, TokenPtr t)
         os << t->fval;
         break;
     case Token::FUNC:
-        os << "func(" << t->sym << ")";
+        // XXX Chase down context and print full path
+        os << "func(" << t->context->get_full_path(t->sym) << ")";
         break;
     case Token::OPER:
     case Token::SYM:
         os << t->sym;
+        break;
+    case Token::CLASS:
+        // XXX print full name
+        os << "class(" << t->context->get_full_path(t->sym) << ")";
+        break;
+    case Token::OBJECT:
+        // XXX print full name
+        os << "object(" << t->context->get_full_path(t->sym) << ")";
         break;
     }
     
     return os;
 }
 
-std::ostream& LispInterpreter::print_list(std::ostream& os, TokenPtr t)
+std::ostream& LispInterpreter::print_list(std::ostream& os, TokenPtr t, ContextPtr context)
 {
     bool first = true;
     while (t) {
         if (!first) os << ' ';
         first = false;
-        print_item(os, t);
+        print_item(os, t, context);
         t = t->next;
     }
     
@@ -337,6 +346,27 @@ TokenPtr Token::parse_number(Parsing& p)
     return 0;
 }
 
+SymbolPtr LispInterpreter::parse_symbol(const char *str, int len)
+{
+    char ch;
+    Parsing p(str, len);
+    SymbolPtr s, c;
+    while (p.more()) {
+        p.set_mark();
+        while (p.more() && p.peek() != '.') p.skip();
+        SymbolPtr n = interns.find(p.get_mark(), p.mark_len())->wrap();
+        if (c) {
+            c->next = n;
+            c = n;
+        } else {
+            s = n;
+            c = n;
+        }
+        p.skip();
+    }
+    return s;
+}
+
 TokenPtr LispInterpreter::parse_token(Parsing& p)
 {
     char *s;
@@ -426,7 +456,7 @@ TokenPtr LispInterpreter::parse_token(Parsing& p)
         t = std::make_shared<Token>();
         t->type = Token::SYM;
         t->quote = quote;
-        t->sym = interns.find(p.get_mark(), p.mark_len());
+        t->sym = parse_symbol(p.get_mark(), p.mark_len());
         return t;
     }
     
@@ -442,7 +472,7 @@ TokenPtr LispInterpreter::parse_token(Parsing& p)
     t = std::make_shared<Token>();
     t->type = Token::SYM;
     t->quote = quote;
-    t->sym = interns.find(p.get_mark(), p.mark_len());
+    t->sym = parse_symbol(p.get_mark(), p.mark_len());
     return t;
 }
 

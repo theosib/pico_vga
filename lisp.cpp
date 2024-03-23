@@ -10,6 +10,25 @@ std::ostream& operator<<(std::ostream& os, const TokenPtr& s)
     return os;
 }
 
+
+std::string Context::get_full_path(SymbolPtr name)
+{
+    std::string s;
+    if (name) s = name->as_stringview();
+
+    if (this->name) {
+        s = std::string(this->name->as_stringview()) + std::string(":") + s;
+    } else {
+        if (parent) {
+            s = "local:" + s;
+        } else {
+            return "global:" + s;
+        }
+    }
+    
+    return parent->get_full_path(0) + ':' + s;
+}
+
 void Context::set_global(SymbolPtr s, TokenPtr t)
 {
     if (!parent) {
@@ -19,12 +38,49 @@ void Context::set_global(SymbolPtr s, TokenPtr t)
     }
 }
 
-TokenPtr Context::get(SymbolPtr s)
+ContextPtr Context::get_owner(SymbolPtr& name)
 {
-    TokenPtr t = vars.get(s);
+    ContextPtr owner = shared_from_this();
+    while (name->next) {
+        TokenPtr t = owner->get_local(name);
+        if (!t) {
+            std::cout << "No such variable or context ";
+            name->print_item(std::cout);
+            std::cout << std::endl;
+            return 0;
+        }
+        if (t->type != Token::OBJECT && t->type != Token::CLASS) {
+            std::cout << "Variable ";
+            name->print_item(std::cout);
+            std::cout << " is not of type object or class\n";
+            return 0;
+        }
+        
+        std::cout << "Owner of " << name << " is " << t->sym << std::endl;
+        
+        owner = t->context;
+        name = name->next;
+    }
+    return owner;
+}
+
+TokenPtr Context::get_local(SymbolPtr name)
+{
+    return vars.get(name);
+}
+
+TokenPtr Context::get(SymbolPtr& name, ContextPtr& owner)
+{
+    owner = get_owner(name);    
+    TokenPtr t = owner->vars.get(name);
     if (t) return t;
-    if (!parent) return 0;
-    return parent->get(s);
+    if (!owner->parent) return 0;
+    if (owner->type == Token::OBJECT) {
+        ContextPtr dummy;
+        return owner->parent->get(name, dummy);
+    } else {
+        return owner->parent->get(name, owner);
+    }
 }
 
 SymbolPtr Interns::find(const char *p, int len)
@@ -188,54 +244,43 @@ void LispInterpreter::addFunction(TokenPtr list, ContextPtr context)
     context->set(list->sym, t);
 }
 
-TokenPtr LispInterpreter::callFunction(TokenPtr list, ContextPtr parent)
+
+TokenPtr LispInterpreter::callFunction(SymbolPtr name, TokenPtr args, TokenPtr params, ContextPtr owner, ContextPtr caller)
 {
-    std::cout << "Calling func: ";
-    print_list(std::cout, list);
+    std::cout << "Calling func " << name << ": ";
+    print_list(std::cout, params);
     std::cout << std::endl;
     
-    if (list->type != Token::SYM) {
-        printf("Error not a token\n");
+    TokenPtr body = params->next;
+    if (!body) return 0; // Empty body is okay, but we need to do no more work
+            
+    if (params->type != Token::LIST) {
+        std::cout << "Function doesn't start with list of args\n";
         return 0;
     }
     
-    // Look up function by name
-    TokenPtr func = getVariable(list, parent);
-    list = list->next; // Skip over name
+    // Make a local variable context
+    owner = owner->make_child();
     
-    TokenPtr args = func->list;
-    std::cout << "Args: " << args << std::endl;
-    
-    if (args->type != Token::LIST) {
-        // XXX Move this to addFunction
-        printf("Function doesn't start with args list\n");
-        return 0;
-    }
-    
-    // Function body
-    TokenPtr body = args->next;
-    std::cout << "Body: " << body << std::endl;
-    
-    // New context
-    ContextPtr context = parent->make_child();
-    
-    // args is a list of names
-    args = args->list;
-    while (args && list) {
+    params = params->list;
+    while (args && params) {
         // XXX handle wrong number of arguments
-        SymbolPtr arg_name = args->sym;
-        if (args->quote) {
+        SymbolPtr param_name = params->sym;
+        if (params->quote) {
             // Final element, gets rest of args as list
-            context->set(arg_name, Token::as_list(list));
+            // This needs to make a list out of evaluated items
+            // XXX Evaluate each from the calling context
+            owner->set(param_name, Token::as_list(args));
             break;
         } else {
-            context->set(arg_name, list);
+            // Evaluate argument in the calling context and put the result into the callee context
+            owner->set(param_name, evaluate_item(args, caller));
         }
-        list = list->next;
+        params = params->next;
         args = args->next;
     }
     
-    return evaluate_list(body, context);
+    return evaluate_list(body, owner);
 }
 
 void LispInterpreter::setVariable(TokenPtr list, ContextPtr context)
@@ -258,16 +303,16 @@ TokenPtr LispInterpreter::getVariable(TokenPtr name, ContextPtr context)
 }
 
 // Evaluate a single item
-TokenPtr LispInterpreter::evaluate_item(TokenPtr item, ContextPtr context)
+TokenPtr LispInterpreter::evaluate_item(TokenPtr item, ContextPtr caller)
 {
     if (!item) return 0;
     
     std::cout << "Evaluating: ";
-    print_item(std::cout, item);
+    print_item(std::cout, item, caller);
     std::cout << std::endl;
     
     if (item->quote) return item;    
-    if (!context) context = globals;
+    if (!caller) caller = globals;
     
     if (item->type == Token::LIST) {
         // Unquoted list is function or operator call or list of calls
@@ -275,7 +320,7 @@ TokenPtr LispInterpreter::evaluate_item(TokenPtr item, ContextPtr context)
         
         TokenPtr ret;
         while (list && list->type == Token::LIST) {
-            ret = evaluate_item(list, context);
+            ret = evaluate_item(list, caller);
             list = list->next;
         }
         
@@ -286,11 +331,38 @@ TokenPtr LispInterpreter::evaluate_item(TokenPtr item, ContextPtr context)
             return item;
         }
         
-        TokenPtr func = context->get(list->sym);
-        if (func->type == Token::OPER) {
-            return (*func->oper)(list->next, context);
+        SymbolPtr name = list->sym;
+        TokenPtr args = list->next;
+        ContextPtr owner;
+        TokenPtr func = caller->get(name, owner);
+        if (!func) {
+            std::cout << "Function call failed\n";
+            // Pass on the exception
+            return 0;
+        }
+        
+        if (func->type == Token::CLASS) {
+            TokenPtr obj = std::make_shared<Token>();
+            obj->type = Token::OBJECT;
+            obj->sym = name;
+            obj->context = func->context->make_child_object(name); // Parent of object is class
+            // See if class has "_init" method
+            SymbolPtr _init_sym = find_symbol("_init");
+            TokenPtr _init_func = func->context->get_local(_init_sym);
+            if (_init_func) {
+                if (_init_func->type != Token::FUNC) {
+                    std::cout << "Error: _init must be function\n";
+                } else {
+                    TokenPtr params_body = _init_func->list;
+                    callFunction(_init_sym, args, params_body, obj->context, caller);
+                }
+            }
+            return obj;
+        } else if (func->type == Token::OPER) {
+            return (*func->oper)(list->next, caller);
         } else if (func->type == Token::FUNC) {
-            return callFunction(list, context);
+            TokenPtr params_body = func->list;
+            return callFunction(name, args, params_body, owner, caller);
         } else {
             std::cout << "Function call must start with valid function or operator\n";
             return item;
@@ -299,12 +371,13 @@ TokenPtr LispInterpreter::evaluate_item(TokenPtr item, ContextPtr context)
     
     if (item->type == Token::SYM) {
         // Unquoted symbol gets looked up
-        return getVariable(item, context);
+        return getVariable(item, caller);
     }
     
     return item;
 }
 
+// Evaluates a function body -- rename to evaluate_rest
 TokenPtr LispInterpreter::evaluate_list(TokenPtr list, ContextPtr context)
 {
     TokenPtr ret;
@@ -419,6 +492,9 @@ TokenPtr LispInterpreter::transform_infix(TokenPtr list)
     return stack.back();
 }
 
+/*
+    evaluate_each -- produce list of evaluated entries of a list
+*/
 
 int main() {
     // const char *floatStr = "3.14e2";
