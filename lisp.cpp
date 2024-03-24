@@ -10,23 +10,37 @@ std::ostream& operator<<(std::ostream& os, const TokenPtr& s)
     return os;
 }
 
+TokenPtr Context::make_exception(const std::string err) {
+    TokenPtr t = std::make_shared<Token>();
+    t->type = Token::EXCEPTION;
+    t->sym = interp->find_symbol(err);
+    t->context = shared_from_this();
+    return t;
+}
+
 
 std::string Context::get_full_path(SymbolPtr name)
 {
     std::string s;
-    if (name) s = name->as_stringview();
+    if (name) s = std::string(".") + std::string(name->as_stringview());
 
-    if (this->name) {
-        s = std::string(this->name->as_stringview()) + std::string(":") + s;
-    } else {
+    switch (type) {
+    case Token::OBJECT:
+        s = "object" + s;
+        break;
+    case Token::FUNC:
+    case Token::CLASS:
+        s = std::string(this->name->as_stringview()) + s;
+        break;
+    default:
         if (parent) {
-            s = "local:" + s;
+            s = "local" + s;
         } else {
-            return "global:" + s;
+            return "global" + s;
         }
     }
     
-    return parent->get_full_path(0) + ':' + s;
+    return parent->get_full_path(0) + "." + s;
 }
 
 void Context::set_global(SymbolPtr s, TokenPtr t)
@@ -219,6 +233,14 @@ std::string Token::string_val(TokenPtr item)
     return ss.str();
 }
 
+std::string Token::inspect(TokenPtr item)
+{
+    if (!item) return "[null]";
+    std::stringstream ss;
+    LispInterpreter::print_item(ss, item);
+    return ss.str();
+}
+
 void LispInterpreter::addOperator(const std::string& name, built_in_f f, int precedence, int order)
 {
     SymbolPtr s = interns.find(name.data(), name.length());
@@ -260,7 +282,7 @@ TokenPtr LispInterpreter::callFunction(SymbolPtr name, TokenPtr args, TokenPtr p
     }
     
     // Make a local variable context
-    owner = owner->make_child();
+    owner = owner->make_child_function(name);
     
     params = params->list;
     while (args && params) {
@@ -283,21 +305,23 @@ TokenPtr LispInterpreter::callFunction(SymbolPtr name, TokenPtr args, TokenPtr p
     return evaluate_list(body, owner);
 }
 
-void LispInterpreter::setVariable(TokenPtr list, ContextPtr context)
-{
-    if (list->type != Token::SYM) {
-        printf("Not a symbol\n");
-        return;
-    }
-    std::cout << "Set var: ";
-    print_list(std::cout, list);
-    std::cout << std::endl;
-    context->set(list->sym, list->next);
-}
+// void LispInterpreter::setVariable(TokenPtr list, ContextPtr context)
+// {
+//     if (list->type != Token::SYM) {
+//         printf("Not a symbol\n");
+//         return;
+//     }
+//     std::cout << "Set var: ";
+//     print_list(std::cout, list);
+//     std::cout << std::endl;
+//     context->set(list->sym, list->next);
+// }
 
 TokenPtr LispInterpreter::getVariable(TokenPtr name, ContextPtr context)
 {
-    if (name->type != Token::SYM) return 0;
+    if (name->type != Token::SYM) {
+        return context->make_exception("Token " + Token::inspect(name) + " is not a symbol");
+    }
     std::cout << "Get var: " << name->sym << std::endl;
     return context->get(name->sym);
 }
@@ -328,7 +352,7 @@ TokenPtr LispInterpreter::evaluate_item(TokenPtr item, ContextPtr caller)
         
         if (list->type != Token::SYM) {
             std::cout << "Function call must start with symbol\n";
-            return item;
+            return caller->make_exception("Function call must start with symbol: " + Token::inspect(list));
         }
         
         SymbolPtr name = list->sym;
@@ -337,24 +361,25 @@ TokenPtr LispInterpreter::evaluate_item(TokenPtr item, ContextPtr caller)
         TokenPtr func = caller->get(name, owner);
         if (!func) {
             std::cout << "Function call failed\n";
-            // Pass on the exception
-            return 0;
+            return caller->make_exception("Function name not found: " + Token::inspect(list));
         }
         
         if (func->type == Token::CLASS) {
             TokenPtr obj = std::make_shared<Token>();
             obj->type = Token::OBJECT;
-            obj->sym = name;
-            obj->context = func->context->make_child_object(name); // Parent of object is class
+            //obj->sym = name;
+            obj->context = func->context->make_child_object(); // Parent of object is class
             // See if class has "_init" method
             SymbolPtr _init_sym = find_symbol("_init");
             TokenPtr _init_func = func->context->get_local(_init_sym);
             if (_init_func) {
                 if (_init_func->type != Token::FUNC) {
+                    return caller->make_exception("_init isn't a function: " + Token::inspect(list));
                     std::cout << "Error: _init must be function\n";
                 } else {
                     TokenPtr params_body = _init_func->list;
-                    callFunction(_init_sym, args, params_body, obj->context, caller);
+                    TokenPtr r = callFunction(_init_sym, args, params_body, obj->context, caller);
+                    if (r->type == Token::EXCEPTION) return caller->make_exception(r);
                 }
             }
             return obj;
@@ -362,10 +387,9 @@ TokenPtr LispInterpreter::evaluate_item(TokenPtr item, ContextPtr caller)
             return (*func->oper)(list->next, caller);
         } else if (func->type == Token::FUNC) {
             TokenPtr params_body = func->list;
-            return callFunction(name, args, params_body, owner, caller);
+            return caller->check_exception(callFunction(name, args, params_body, owner, caller));
         } else {
-            std::cout << "Function call must start with valid function or operator\n";
-            return item;
+            return caller->make_exception("Function call must start with valid function or operator: " + Token::inspect(list));
         }
     }
     
@@ -388,12 +412,14 @@ TokenPtr LispInterpreter::evaluate_list(TokenPtr list, ContextPtr context)
     return ret;
 }
 
+// XXX rename this 
 TokenPtr LispInterpreter::evaluate_string(const std::string& s, ContextPtr context)
 {
     TokenPtr p = parse_string(s);
     return evaluate_item(p, context);
 }
 
+// XXX do error checking
 TokenPtr LispInterpreter::transform_infix(TokenPtr list)
 {
     std::vector<TokenPtr> stack, queue;

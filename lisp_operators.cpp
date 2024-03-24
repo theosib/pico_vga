@@ -7,20 +7,18 @@ static TokenPtr builtin_defun(TokenPtr list, ContextPtr context)
     std::cout << std::endl;
     
     if (list->type != Token::SYM) {
-        printf("Function doesn't start with symbol name\n");
-        return 0;
+        // XXX inspect_rest
+        return context->make_exception("Function doesn't start with symbol name: " + Token::inspect(list));
     }
     
     TokenPtr args, body;
     if (!list->next || !list->next->next) {
-        printf("Function definition requires args list and body");
-        return 0;
+        return context->make_exception("Function definition requires parameter list and body: " + Token::inspect(list));
     }
     args = list->next;
     
     if (args->type != Token::LIST) {
-        printf("Function definition requires list of args");
-        return 0;
+        return context->make_exception("Function definition requires parameter list: " + Token::inspect(list));
     }
         
     SymbolPtr name = list->sym;
@@ -42,8 +40,7 @@ static TokenPtr builtin_defclass(TokenPtr list, ContextPtr context)
     std::cout << std::endl;
     
     if (list->type != Token::SYM) {
-        printf("Class doesn't start with symbol name\n");
-        return 0;
+        return context->make_exception("Class doesn't start with symbol name: " + Token::inspect(list));
     }
     
     SymbolPtr name = list->sym;
@@ -57,7 +54,8 @@ static TokenPtr builtin_defclass(TokenPtr list, ContextPtr context)
     
     // Execute code
     TokenPtr body = list->next;
-    context->interp->evaluate_list(body, t->context);
+    TokenPtr r = context->interp->evaluate_list(body, t->context);
+    if (r->type == Token::EXCEPTION) return context->make_exception(r);
     
     return t;
 }
@@ -520,8 +518,7 @@ static TokenPtr builtin_set_obj(TokenPtr item, ContextPtr caller)
         if (owner) std::cout << "Type=" << int(owner->type) << " name=" << owner->name << std::endl;
     }
     if (!owner) {
-        std::cout << "No object context for " << name << std::endl;
-        return 0; // Exception
+        return caller->make_exception(std::string("No object context for: ") + std::string(name->as_stringview()));
     }
     TokenPtr val = caller->interp->evaluate_list(item->next, caller);
     owner->set(name, val);
@@ -535,8 +532,7 @@ static TokenPtr builtin_set_class(TokenPtr item, ContextPtr caller)
     ContextPtr owner = caller;
     while (owner && owner->type != Token::CLASS) owner = owner->parent;
     if (!owner) {
-        std::cout << "No class context for " << name << std::endl;
-        return 0; // Exception
+        return caller->make_exception(std::string("No class context for: ") + std::string(name->as_stringview()));
     }
     TokenPtr val = caller->interp->evaluate_list(item->next, caller);
     owner->set(name, val);

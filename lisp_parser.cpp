@@ -65,11 +65,18 @@ std::ostream& LispInterpreter::print_item(std::ostream& os, TokenPtr t, ContextP
         break;
     case Token::CLASS:
         // XXX print full name
-        os << "class(" << t->context->get_full_path(t->sym) << ")";
+        os << "class(" << t->context->get_full_path(0) << ")";
         break;
     case Token::OBJECT:
         // XXX print full name
-        os << "object(" << t->context->get_full_path(t->sym) << ")";
+        os << "object(" << t->context->get_full_path(0) << ")";
+        break;
+    case Token::EXCEPTION:
+        if (t->sym) {
+            Token::print_string(os, t->sym->p, t->sym->len);
+            std::cout << ", ";
+        }
+        os << "exception(" << t->context->get_full_path(0) << ")";
         break;
     }
     
@@ -367,6 +374,7 @@ SymbolPtr LispInterpreter::parse_symbol(const char *str, int len)
     return s;
 }
 
+// XXX error checking
 TokenPtr LispInterpreter::parse_token(Parsing& p)
 {
     char *s;
