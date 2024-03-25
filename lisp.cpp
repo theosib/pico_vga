@@ -522,6 +522,7 @@ TokenPtr LispInterpreter::transform_infix(TokenPtr list)
     evaluate_each -- produce list of evaluated entries of a list
 */
 
+#if 0
 int main() {
     // const char *floatStr = "3.14e2";
     // int length = strlen(floatStr);
@@ -550,3 +551,4 @@ int main() {
     // std::cout << std::endl;
     return 0;
 }
+#endif

@@ -9,6 +9,7 @@ VGATerm::~VGATerm() {}
 void VGATerm::DrawText(int fg_color, int bg_color, int flags,
                 int x, int y, int len, unsigned char *string)
 {
+    y += row_offset;
 	if (flags & INVERSE) {
 		int t = fg_color;
 		fg_color = bg_color;
@@ -33,11 +34,14 @@ void VGATerm::DrawCursor(int fg_color, int bg_color, int flags,
 
 void VGATerm::MoveChars(int sx, int sy, int dx, int dy, int w, int h)
 {
+    sy += row_offset;
+    dy += row_offset;
     graphics->copy_area(sx, sy, dx, dy, w, h);
 }
 
 void VGATerm::ClearChars(int bg_color, int x, int y, int w, int h)
 {
+    y += row_offset;
     graphics->clear_area(x, y, bg_color, w);
 }
 

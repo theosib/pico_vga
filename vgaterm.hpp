@@ -6,6 +6,7 @@
 
 struct VGATerm : public GTerm {
     VGAGraphics *graphics;
+    int row_offset = 3;
     
     VGATerm(VGAGraphics *g) : GTerm(80, 24) { 
         graphics = g;
