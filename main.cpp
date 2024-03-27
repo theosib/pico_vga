@@ -72,23 +72,32 @@ void read_line(std::string& line)
 
 uint64_t last_print = 0;
 uint64_t last_task = 0;
-uint64_t max_delay = 0;
+uint64_t max_delay[4] = {0};
 
 void all_core1_tasks()
 {
     uint64_t now = time_us_64();
     if (last_task) {
         uint64_t dif = now - last_task;
-        if (dif > max_delay) max_delay = dif;
+        if (dif > max_delay[0]) max_delay[0] = dif;
     }
     last_task = now;
     if (now - last_print > 10000000) {
-        printf("delay %d\n", (int)max_delay);
+        printf("delay %d, %d, %d, %d\n", (int)max_delay[0], (int)max_delay[1], (int)max_delay[2], (int)max_delay[3]);
         last_print = now;
     }
+    
+    uint64_t t1 = time_us_64();
     hid_app_task();
+    uint64_t t2 = time_us_64();
     tuh_task();
+    uint64_t t3 = time_us_64();
     console->console_task();
+    uint64_t t4 = time_us_64();
+    
+    if (t2 - t1 > max_delay[1]) max_delay[1] = t2 - t1;
+    if (t3 - t2 > max_delay[2]) max_delay[2] = t3 - t2;
+    if (t4 - t3 > max_delay[3]) max_delay[3] = t4 - t3;
 }
 
 // Entry point for second CPU
