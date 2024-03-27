@@ -16,8 +16,8 @@ struct VGAConsole : public KeyReceiver {
         mouse = m;
     }
     
-    std::vector<task_f> tasks;
-    void add_task(task_f t) { tasks.push_back(t); }
+    // std::vector<task_f> tasks;
+    // void add_task(task_f t) { tasks.push_back(t); }
     
     // Ring buffer for characters from serial input
     volatile int buf_head = 0;
@@ -32,7 +32,10 @@ struct VGAConsole : public KeyReceiver {
         buf_tail = next_tail;
     }
     
-    void console_loop();
+    bool terminal_pending = false;
+    bool was_in_vblank = false;
+    bool in_vblank_now = false;
+    void console_task();
     
     virtual void report_key_pressed(int ch) {
         add_char(ch);

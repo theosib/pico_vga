@@ -4,6 +4,9 @@
 #include "bsp/board.h"
 #include "tusb.h"
 
+
+extern void hid_app_task();
+
 // Some code copied from https://github.com/dquadros/RPTerm/blob/main/keybd.cpp
 
 struct KeyReceiver {
@@ -83,9 +86,9 @@ struct HIDHost {
     
     void put_kbd(int ch);
     
-    void start() {
-        tuh_init(BOARD_TUH_RHPORT);
-    }
+    // void start() {
+    //     tuh_init(BOARD_TUH_RHPORT);
+    // }
     
     HIDHost() {
         //printf("Starting HID host\n");

@@ -98,7 +98,7 @@
 #define CFG_TUH_HUB                 1 // number of supported hubs
 #define CFG_TUH_CDC                 0
 #define CFG_TUH_HID                 4 // typical keyboard + mouse device can have 3-4 HID interfaces
-#define CFG_TUH_MSC                 0
+#define CFG_TUH_MSC                 1
 #define CFG_TUH_VENDOR              0
 
 // max device support (excluding hub device)
@@ -118,6 +118,7 @@
 // bit rate = 115200, 1 stop bit, no parity, 8 bit data width
 #define CFG_TUH_CDC_LINE_CODING_ON_ENUM   { 115200, CDC_LINE_CONDING_STOP_BITS_1, CDC_LINE_CODING_PARITY_NONE, 8 }
 
+#define CFG_TUH_MSC_MAXLUN    4 // typical for most card reader
 
 #ifdef __cplusplus
  }

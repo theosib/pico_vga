@@ -11,6 +11,7 @@
 #include "mouse.hpp"
 #include "console.hpp"
 #include "hid_app.hpp"
+#include "msc_app.hpp"
 #include "console_stdio.hpp"
 #include "lisp.hpp"
 
@@ -20,6 +21,7 @@ VGATerm *term = 0;
 VGAConsole *console = 0;
 VGAMouse *mouse = 0;
 extern HIDHost *usb_hid;
+extern MSCHost *usb_msc;
 
 extern void hblank_isr();
 extern void hid_app_task();
@@ -41,6 +43,13 @@ void draw_test_pattern()
 }
 #endif
 
+void all_core1_tasks()
+{
+    hid_app_task();
+    tuh_task();
+    console->console_task();
+}
+
 // Entry point for second CPU
 void core1_entry()
 {
@@ -55,16 +64,25 @@ void core1_entry()
 
     printf("Starting USB\n");
     usb_hid = new HIDHost();
+    usb_msc = new MSCHost();
     // usb_hid->setKeyReceiver(console);
     usb_hid->setMouseReceiver(mouse);
-    usb_hid->start();
+    //usb_hid->start();
+    tuh_init(BOARD_TUH_RHPORT);
     
-    console->add_task(hid_app_task);
-    console->add_task(tuh_task);
+    // XXX Make a console_task
+    // console->add_task(hid_app_task);
+    // console->add_task(tuh_task);
     
     draw_test_pattern();
     
-    console->console_loop();
+    // console->console_loop();
+    for (;;) {
+        // XXX Start disk I/O operations from here
+        // ...
+        
+        all_core1_tasks();
+    }
 }
 
 void read_line(std::string& line)
