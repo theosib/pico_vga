@@ -1,0 +1,46 @@
+; List expressions
+{+ {* 4 5} 3}
+
+; Infix expressions
+(3 + 4 * 5)
+
+; Define a class with a method
+; This sets an object member variable named y
+{class q {func c {x} {set@ y x}}}
+
+; Create an instance of the class
+{set a {q}}
+
+; Call a method of the class
+{a.c 4}
+
+; Print the object member variable
+{print a.y}
+
+; Add an extra method to the class
+{func q.d {x} {set@ w (x + 1)}}
+
+; Call that method on the instance
+{a.d 6}
+
+; Print the value created by this method
+{print a.w}
+
+; Unadorned expressions are processed as lists, so this is the same:
+print a.w
+
+; Add a method to the object
+{func a.f {x} {set@ z {cat x "a string"}}}
+
+; List files on flash
+fs.dir
+
+; Make the fs namespace the root and list the files
+use fs
+dir
+
+; Plot some graphics
+{gfx.line 10 10 100 100}
+{gfx.circle 50 50 10}
+{gfx.text 60 100 "This is some text"}
+

@@ -1,0 +1,16 @@
+#000000 black
+#000099 red
+#009900 green
+#009999 yellow
+#990000 blue
+#990099 magenta
+#999900 cyan
+#999999 light gray
+#666666 dark gray
+#6666FF light red
+#66FF66 light green
+#66FFFF light yellow
+#FF6666 light blue
+#FF66FF light magenta
+#FFFF66 light cyan
+#FFFFFF white

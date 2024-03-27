@@ -1,0 +1,14 @@
+[2J[H[44m[37mThis is a test of VT102 terminal emulator.
+[1mBold Text
+[3mItalic Text
+[4mUnderlined Text
+[7mInverse Text
+[0m
+
+[41mWindow 1
+
+[42mWindow 2
+
+[43mWindow 3
+
+[0m
