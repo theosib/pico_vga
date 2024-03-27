@@ -139,6 +139,7 @@ void MSCHost::wait_for_disk_io(BYTE pdrv)
 
 static bool disk_io_complete(uint8_t dev_addr, tuh_msc_complete_data_t const * cb_data)
 {
+    printf("Disk I/O complete\n");
   (void) dev_addr; (void) cb_data;
   if (!usb_msc) return false;
   usb_msc->_disk_busy[dev_addr-1] = false;
@@ -173,8 +174,11 @@ DRESULT disk_read (
 	uint8_t const lun = 0;
 
 	usb_msc->_disk_busy[pdrv] = true;
+    printf("Reading\n");
 	tuh_msc_read10(dev_addr, lun, buff, sector, (uint16_t) count, disk_io_complete, 0);
-    if (!usb_msc) usb_msc->wait_for_disk_io(pdrv);
+    printf("Waiting\n");
+    usb_msc->wait_for_disk_io(pdrv);
+    printf("Done reading\n");
 
 	return RES_OK;
 }
@@ -193,7 +197,7 @@ DRESULT disk_write (
 
 	usb_msc->_disk_busy[pdrv] = true;
 	tuh_msc_write10(dev_addr, lun, buff, sector, (uint16_t) count, disk_io_complete, 0);
-    if (!usb_msc) usb_msc->wait_for_disk_io(pdrv);
+    usb_msc->wait_for_disk_io(pdrv);
 
 	return RES_OK;
 }

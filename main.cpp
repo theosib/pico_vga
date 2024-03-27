@@ -11,7 +11,7 @@
 #include "mouse.hpp"
 #include "console.hpp"
 #include "hid_app.hpp"
-#include "msc_app.hpp"
+// #include "msc_app.hpp"
 #include "console_stdio.hpp"
 #include "lisp.hpp"
 
@@ -21,7 +21,7 @@ VGATerm *term = 0;
 VGAConsole *console = 0;
 VGAMouse *mouse = 0;
 extern HIDHost *usb_hid;
-extern MSCHost *usb_msc;
+// extern MSCHost *usb_msc;
 
 extern void hblank_isr();
 extern void hid_app_task();
@@ -43,47 +43,6 @@ void draw_test_pattern()
 }
 #endif
 
-void all_core1_tasks()
-{
-    hid_app_task();
-    tuh_task();
-    console->console_task();
-}
-
-// Entry point for second CPU
-void core1_entry()
-{
-    printf("Core 1 start\n");
-    
-    // Configure VGA here so that IRQs get routed to core1
-    graphics = new VGAGraphics(video);
-    term = new VGATerm(graphics);
-    mouse = new VGAMouse(graphics);
-    console = new VGAConsole(term, mouse);
-    init_stdio_vga();
-
-    printf("Starting USB\n");
-    usb_hid = new HIDHost();
-    usb_msc = new MSCHost();
-    // usb_hid->setKeyReceiver(console);
-    usb_hid->setMouseReceiver(mouse);
-    //usb_hid->start();
-    tuh_init(BOARD_TUH_RHPORT);
-    
-    // XXX Make a console_task
-    // console->add_task(hid_app_task);
-    // console->add_task(tuh_task);
-    
-    draw_test_pattern();
-    
-    // console->console_loop();
-    for (;;) {
-        // XXX Start disk I/O operations from here
-        // ...
-        
-        all_core1_tasks();
-    }
-}
 
 void read_line(std::string& line)
 {
@@ -111,26 +70,68 @@ void read_line(std::string& line)
     }
 }
 
-int main()
+uint64_t last_print = 0;
+uint64_t last_task = 0;
+uint64_t max_delay = 0;
+
+void all_core1_tasks()
 {
-    // stdio_init_all();
-    board_init();
+    uint64_t now = time_us_64();
+    if (last_task) {
+        uint64_t dif = now - last_task;
+        if (dif > max_delay) max_delay = dif;
+    }
+    last_task = now;
+    if (now - last_print > 10000000) {
+        printf("delay %d\n", (int)max_delay);
+        last_print = now;
+    }
+    hid_app_task();
+    tuh_task();
+    console->console_task();
+}
+
+// Entry point for second CPU
+void core1_entry()
+{
+    sleep_ms(1000);
+    printf("Core 1 start\n");
+    
+    // Configure VGA here so that IRQs get routed to core1
+    graphics = new VGAGraphics(video);
+    term = new VGATerm(graphics);
+    mouse = new VGAMouse(graphics);
+    console = new VGAConsole(term, mouse);
+    init_stdio_vga();
+
+    printf("Starting USB\n");
+    usb_hid = new HIDHost();
+    // usb_msc = new MSCHost();
+    // usb_hid->setKeyReceiver(console);
+    usb_hid->setMouseReceiver(mouse);
+    //usb_hid->start(); // Obsolete
+    tuh_init(BOARD_TUH_RHPORT);
+    
+    
+    // XXX Make a console_task
+    // console->add_task(hid_app_task);
+    // console->add_task(tuh_task);
+    
+    draw_test_pattern();
+    
+    // console->console_loop();
+    for (;;) {
+        // XXX Start disk I/O operations from here
+        // ...
+        
+        all_core1_tasks();
+    }
+}
+
+void core0_entry()
+{
     video = new VGAVideo(hblank_isr);
     video->start();
-    // sleep_ms(1000);
-    // board_init();
-    // tuh_init(BOARD_TUH_RHPORT);
-    //stdio_set_translate_crlf(&stdio_uart, false);
-
-    // printf("Starting USB\n");
-    // usb_hid = new HIDHost();
-    // board_init();
-    // usb_hid->setKeyReceiver(console);
-    // usb_hid->setMouseReceiver(mouse);
-    // usb_hid->start(); 
-
-    printf("\n\nStarting VGA\n");
-    multicore_launch_core1(core1_entry);
     
     LispInterpreter li;
     
@@ -160,6 +161,28 @@ int main()
         // int ch = getchar_timeout_us(100);
         // if (PICO_ERROR_TIMEOUT == ch) ...
     }
+}
+
+
+int main()
+{
+    // stdio_init_all();
+    board_init();
+    // sleep_ms(1000);
+    // board_init();
+    // tuh_init(BOARD_TUH_RHPORT);
+    //stdio_set_translate_crlf(&stdio_uart, false);
+
+    // printf("Starting USB\n");
+    // usb_hid = new HIDHost();
+    // board_init();
+    // usb_hid->setKeyReceiver(console);
+    // usb_hid->setMouseReceiver(mouse);
+    // usb_hid->start(); 
+
+    printf("\n\nStarting VGA\n");
+    multicore_launch_core1(core0_entry);
+    core1_entry();
 }
 
 

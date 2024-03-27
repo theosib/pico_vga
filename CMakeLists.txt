@@ -17,7 +17,7 @@ add_executable(${PROJECT})
 
 target_sources(${PROJECT} PUBLIC
     main.cpp gterm.cpp states.cpp vt52_states.cpp actions.cpp utils.cpp vgaterm.cpp hid_app.cpp mouse.cpp video.cpp console.cpp graphics.cpp console_stdio.cpp
-    lisp.cpp lisp_operators.cpp lisp_parser.cpp msc_app.cpp
+    lisp.cpp lisp_operators.cpp lisp_parser.cpp #msc_app.cpp
     ${USB_TOP}/lib/fatfs/source/ff.c
     ${USB_TOP}/lib/fatfs/source/ffsystem.c
     ${USB_TOP}/lib/fatfs/source/ffunicode.c
